@@ -1,0 +1,28 @@
+# Datasets (CIFAR-10 auto-downloads here; the tarball exceeds GitHub's file limit)
+data/
+
+# Trained models, logs, and results
+Checkpoints/
+*.pth
+*.log
+loss_log.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Papers / local reference material
+*.pdf

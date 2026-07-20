@@ -1,0 +1,12 @@
+# Dynamic_JSCC dependencies
+# Original project is from ~2021 (PyTorch). These pinned modern versions
+# are needed because the RTX 4070 (Ada, sm_89) is not supported by the
+# original 2021 PyTorch builds. The code uses only stable APIs and runs
+# fine on modern PyTorch 2.x.
+#
+# NOTE: torch/torchvision must be installed from the CUDA wheel index:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+#
+torch==2.5.1
+torchvision==0.20.1
+numpy==1.26.4

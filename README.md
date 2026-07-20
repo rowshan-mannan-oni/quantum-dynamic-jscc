@@ -1,65 +1,132 @@
-# Dynamic_JSCC
+# Quantum Dynamic JSCC
 
-This is the code for paper [Deep Joint Source-Channel Coding for Wireless Image Transmission with Adaptive Rate Control](https://arxiv.org/abs/2110.04456). The model is implemented with PyTorch. 
+Hybrid classical–quantum deep Joint Source-Channel Coding (JSCC) for wireless image transmission with adaptive rate control.
 
-<img src="dyna_structure.png" alt="structure" width="700"/>
+This repository extends the Dynamic JSCC architecture of Yang & Kim with a **quantum variant**, implemented using [TorchQuantum](https://github.com/mit-han-lab/torchquantum), and provides a controlled comparison between the classical and quantum versions.
 
-# Usage
-The basic settings are contained in `options/base_options.py`, `options/train_options.py`, and `options/test_options.py`. The style of coding is borrowed from [CycleGAN](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix). 
+> **Status: work in progress.** The classical baseline is set up and reproducible. The quantum variant is under active development; no comparative results are published yet.
 
-## Training
-    usage: train_dyna.py [-h] [--gpu_ids GPU_IDS]
-                     [--checkpoints_dir CHECKPOINTS_DIR] [--model MODEL]
-                     [--input_nc INPUT_NC] [--output_nc OUTPUT_NC] [--ngf NGF]
-                     [--ndf NDF] [--max_ngf MAX_NGF] [--norm NORM]
-                     [--init_type INIT_TYPE] [--init_gain INIT_GAIN]
-                     [--n_downsample N_DOWNSAMPLE] [--n_blocks N_BLOCKS]
-                     [--C_channel C_CHANNEL] [--G_n G_N] [--G_s G_S]
-                     [--select SELECT] [--SNR_MAX SNR_MAX] [--SNR_MIN SNR_MIN]
-                     [--lambda_reward LAMBDA_REWARD] [--lambda_L2 LAMBDA_L2]
-                     [--batch_size BATCH_SIZE]
-                     [--max_dataset_size MAX_DATASET_SIZE] [--epoch EPOCH]
-                     [--load_iter LOAD_ITER] [--verbose] [--suffix SUFFIX]
-                     [--save_latest_freq SAVE_LATEST_FREQ]
-                     [--print_freq PRINT_FREQ]
-                     [--save_epoch_freq SAVE_EPOCH_FREQ] [--save_by_iter]
-                     [--continue_train] [--epoch_count EPOCH_COUNT]
-                     [--phase PHASE] [--n_epochs_joint N_EPOCHS_JOINT]
-                     [--n_epochs_decay N_EPOCHS_DECAY]
-                     [--n_epochs_fine N_EPOCHS_FINE] [--lr_joint LR_JOINT]
-                     [--lr_decay LR_DECAY] [--lr_fine LR_FINE]
-                     [--temp_init TEMP_INIT] [--eta ETA]
-Example usage:
-    
-    python train_dyna.py --gpu_ids '0' --select 'hard' --SNR_MIN 0 --SNR_MAX 20 --lambda_reward 2e-3
+## Background
 
+The base model performs deep JSCC over an AWGN channel with **adaptive rate control**: a policy network decides, per image and per channel SNR, how many latent channel groups to transmit — trading reconstruction quality against bandwidth. The architecture consists of:
 
-## Testing
-    usage: test_dyna.py [-h] [--gpu_ids GPU_IDS]
-                    [--checkpoints_dir CHECKPOINTS_DIR] [--model MODEL]
-                    [--input_nc INPUT_NC] [--output_nc OUTPUT_NC] [--ngf NGF]
-                    [--ndf NDF] [--max_ngf MAX_NGF] [--norm NORM]
-                    [--init_type INIT_TYPE] [--init_gain INIT_GAIN]
-                    [--n_downsample N_DOWNSAMPLE] [--n_blocks N_BLOCKS]
-                    [--C_channel C_CHANNEL] [--G_n G_N] [--G_s G_S]
-                    [--select SELECT] [--SNR_MAX SNR_MAX] [--SNR_MIN SNR_MIN]
-                    [--lambda_reward LAMBDA_REWARD] [--lambda_L2 LAMBDA_L2]
-                    [--batch_size BATCH_SIZE]
-                    [--max_dataset_size MAX_DATASET_SIZE] [--epoch EPOCH]
-                    [--load_iter LOAD_ITER] [--verbose] [--suffix SUFFIX]
-                    [--phase PHASE] [--num_test NUM_TEST]
-                    [--num_test_channel NUM_TEST_CHANNEL] [--SNR SNR]
-Example usage:
-    
-    python test_dyna.py --gpu_ids '0' --select 'hard' --SNR_MIN 0 --SNR_MAX 20 --lambda_reward 2e-3 --num_test 10000 --num_test_channel 1 --SNR 5
-    
-## Reference
+| Module | File | Role |
+|---|---|---|
+| `netSE` — Source Encoder | `models/networks.py` | Downsampling CNN producing image features |
+| `netCE` — Channel Encoder | `models/networks.py` | ResNet blocks + SNR modulation → transmitted latent |
+| `netP` — Policy Network | `models/networks.py` | Gumbel-softmax gate selecting how many groups to send |
+| `netG` — Generator / Decoder | `models/networks.py` | Reconstructs the image from the noisy latent |
 
-    @misc{yang2021deep,
-      title={Deep Joint Source-Channel Coding for Wireless Image Transmission with Adaptive Rate Control}, 
-      author={Mingyu Yang and Hun-Seok Kim},
-      year={2021},
-      eprint={2110.04456},
-      archivePrefix={arXiv},
-      primaryClass={eess.SP}
-    }
+## Research plan
+
+The quantum variant replaces a selected classical module with a variational quantum circuit (`tq.QuantumModule`), following a hybrid pattern: `Linear (→ n_qubits) → angle encoding → variational circuit → measurement → Linear`.
+
+Planned progression:
+
+1. **Classical baseline** — fully trained reference under a fixed, logged protocol.
+2. **Quantum policy network (`netP`)** — feasibility milestone. Small and self-contained, it validates end-to-end autograd through the quantum block and its interaction with the Gumbel-softmax decision.
+3. **Quantum channel encoder (`netCE`)** — the site where the transmitted representation is formed, and the main research target.
+
+### Comparison methodology
+
+The goal is a **fair, controlled comparison**, not a claim of quantum advantage. Both arms are trained under an *identical* protocol — same data splits, channel model, SNR range, optimizer, epochs, batch size, and random seeds — with the quantum/classical block as the only difference. Parameter counts are matched where possible. Absolute numbers may differ from the original paper due to protocol differences; the contribution is the **relative** comparison, plus parameter-efficiency and convergence analysis.
+
+## Setup
+
+Requires an NVIDIA GPU with a recent driver. The original code targets a 2021 PyTorch release, which does **not** support modern GPUs (Ampere/Ada, e.g. RTX 3090/4070); the pinned versions below are current builds that run the original code unmodified.
+
+```bash
+conda create -n dyna_jscc python=3.10 -y
+conda activate dyna_jscc
+
+# CUDA build of PyTorch (adjust the CUDA tag to your driver if needed)
+pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+pip install numpy==1.26.4
+```
+
+Or use the pinned file (note the CUDA index URL comment inside it):
+
+```bash
+pip install -r requirements.txt
+```
+
+Verify the GPU is visible:
+
+```bash
+python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+### Platform note: `num_workers` on Windows
+
+`train_dyna.py` and `test_dyna.py` execute all code at module top level with **no `if __name__ == '__main__':` guard**. On Linux this is fine (`fork`), but on Windows (`spawn`) each DataLoader worker re-imports the script and the run crashes with:
+
+```
+RuntimeError: An attempt has been made to start a new process before the
+current process has finished its bootstrapping phase.
+```
+
+This repo therefore sets `num_workers=0` in both scripts. **On Linux, raise it to `2`–`4`** for faster data loading — with CIFAR-10's small images, data loading is otherwise the bottleneck.
+
+### Dataset
+
+CIFAR-10 downloads automatically to `./data` on first run. The upstream source (`cs.toronto.edu`) can be very slow; if so, fetch `cifar-10-python.tar.gz` manually and place it in `./data/` — torchvision will verify its MD5 and extract it.
+
+## Usage
+
+Settings live in `options/base_options.py`, `options/train_options.py`, and `options/test_options.py`. The option-parsing style is borrowed from [CycleGAN](https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix).
+
+### Training
+
+```bash
+python train_dyna.py --gpu_ids '0' --select 'hard' --SNR_MIN 0 --SNR_MAX 20 --lambda_reward 2e-3
+```
+
+A full run is **400 epochs** (`n_epochs_joint 150` + `n_epochs_decay 150` + `n_epochs_fine 100`). Checkpoints are written to `./Checkpoints/<config-name>/`.
+
+Key options:
+
+| Flag | Meaning |
+|---|---|
+| `--select` | `hard` or `soft` mask selection |
+| `--lambda_reward` | Weight of the rate penalty — **sweep this to trace the rate–distortion curve** |
+| `--C_channel` | Latent channel count |
+| `--G_n` / `--G_s` | Non-selective / selective group counts |
+| `--SNR_MIN`, `--SNR_MAX` | Training SNR range (dB) |
+
+### Testing
+
+```bash
+python test_dyna.py --gpu_ids '0' --select 'hard' --SNR_MIN 0 --SNR_MAX 20 \
+    --lambda_reward 2e-3 --num_test 10000 --num_test_channel 1 --SNR 5
+```
+
+Reports mean PSNR and mean transmitted-channel count. Requires a trained checkpoint.
+
+### Reproducing the rate–distortion curves
+
+The paper's tradeoff curves are traced by sweeping `--lambda_reward` (each value is one operating point), for both `hard` and `soft` selection. Because the model is *dynamic*, a single trained model already yields a spread of operating points.
+
+## Attribution
+
+This work builds directly on:
+
+- **Original repository:** https://github.com/mingyuyng/Dynamic_JSCC (Mingyu Yang)
+- **Paper:** [Deep Joint Source-Channel Coding for Wireless Image Transmission with Adaptive Rate Control](https://arxiv.org/abs/2110.04456) — Mingyu Yang, Hun-Seok Kim
+- Portions of the code carry a **Copyright (C) 2017 NVIDIA Corporation** notice and originate from the CycleGAN/pix2pix codebase.
+
+```bibtex
+@misc{yang2021deep,
+  title={Deep Joint Source-Channel Coding for Wireless Image Transmission with Adaptive Rate Control}, 
+  author={Mingyu Yang and Hun-Seok Kim},
+  year={2021},
+  eprint={2110.04456},
+  archivePrefix={arXiv},
+  primaryClass={eess.SP}
+}
+```
+
+## License
+
+Licensed under **CC BY-NC-SA 4.0**, inherited from the upstream project — see [LICENSE](LICENSE).
+
+This means derivative works must be shared under the same license (**ShareAlike**), **non-commercial use only**, and the original authors must be credited (**Attribution**). Original license headers in the source files are retained.

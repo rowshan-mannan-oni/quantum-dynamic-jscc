@@ -1,0 +1,60 @@
+Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+(CC BY-NC-SA 4.0)
+
+SPDX-License-Identifier: CC-BY-NC-SA-4.0
+
+This work is licensed under the Creative Commons Attribution-NonCommercial-
+ShareAlike 4.0 International License, inherited from the upstream project on
+which it is based.
+
+Full legal code:
+    https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode
+License summary (deed):
+    https://creativecommons.org/licenses/by-nc-sa/4.0/
+
+
+-------------------------------------------------------------------------------
+SUMMARY OF TERMS (not a substitute for the full legal code)
+-------------------------------------------------------------------------------
+
+You are free to:
+
+  Share  — copy and redistribute the material in any medium or format
+  Adapt  — remix, transform, and build upon the material
+
+Under the following terms:
+
+  Attribution (BY)   — You must give appropriate credit, provide a link to the
+                       license, and indicate if changes were made.
+
+  NonCommercial (NC) — You may not use the material for commercial purposes.
+
+  ShareAlike (SA)    — If you remix, transform, or build upon the material, you
+                       must distribute your contributions under the same license
+                       as the original.
+
+  No additional restrictions — You may not apply legal terms or technological
+  measures that legally restrict others from doing anything the license permits.
+
+
+-------------------------------------------------------------------------------
+ATTRIBUTION / UPSTREAM
+-------------------------------------------------------------------------------
+
+This repository is a derivative work based on:
+
+  Dynamic_JSCC — https://github.com/mingyuyng/Dynamic_JSCC
+  Mingyu Yang, licensed under CC BY-NC-SA 4.0
+
+  Paper: "Deep Joint Source-Channel Coding for Wireless Image Transmission
+  with Adaptive Rate Control", Mingyu Yang and Hun-Seok Kim, arXiv:2110.04456
+
+Portions of the source carry the following notice, which is retained in the
+individual files:
+
+  Copyright (C) 2017 NVIDIA Corporation. All rights reserved.
+  Licensed under the CC BY-NC-SA 4.0 license
+  (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
+
+Modifications in this repository (quantum variant, setup and platform fixes)
+are likewise released under CC BY-NC-SA 4.0.
