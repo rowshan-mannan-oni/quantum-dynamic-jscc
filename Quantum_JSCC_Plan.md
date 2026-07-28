@@ -78,7 +78,21 @@ Candidate sites, with cost measured on an RTX 4070 Laptop at 8 qubits, 2 layers
 | **C** | Decoder input | `netG.mask_conv` | 8192 | +0.5 | Quantum receiver; pairs with B for a "quantum link" |
 | **D** | SNR modulation | `modulation` MLPs (×4) | 128 | +0.3 | Quantum channel-state-aware modulation |
 | **E** | The channel itself | AWGN model | — | low | Semantic communication over a quantum channel |
-| **F** | Quanvolution in `netSE` | early conv | very large | high | (well-trodden; not pursued) |
+| **F** | Source encoder | all of `netSE` | 8192 | +0.6 | Quantum patch embedding of the image |
+
+**Site F is affordable, but only at the right patch size.** Replacing `netSE` means embedding image
+patches rather than sliding a filter, and the cost is set entirely by how many patches there are:
+
+| Patch / stride | Output | Positions | Circuit batch | +min/epoch |
+|---|---|---|---|---|
+| 4×4 / 4 | 8×8×256 | 64 | 8192 | **+0.6** |
+| 8×8 / 8 | 4×4×256 | 16 | 2048 | +0.3 |
+| 2×2 / 2 | 16×16×64 | 256 | 32768 | +1.9 |
+| 2×2 / 1 (overlapping) | 31×31×64 | 961 | 123008 | **+19** |
+
+Overlapping quanvolution is what makes this site notorious — 400 epochs would take days. But 4×4
+non-overlapping patches land on exactly 8×8, which *is* `netSE`'s output shape, so the whole
+encoder becomes one `HybridVQC(48 → 256)` at the same batch as site B.
 
 **The measurement that shapes the plan:** at 8 qubits a batch of 8192 costs about what 128 does
 (76 ms vs 44 ms per step). Statevector simulation at this width is bound by kernel launches, not
@@ -88,9 +102,18 @@ roughly 6.5 h for 400 epochs against 3.4 h classical, rather than the multi-day 
 position-by-position loop would require.
 
 **Exploration order:** A (cheap end-to-end proof that autograd survives the Gumbel-Softmax path)
-→ D → **B (the headline)** → C. F is not planned. E is deferred: it is the most novel option but
-it changes the task rather than the architecture, which muddies the comparison; better as
-follow-on work.
+→ D → **B (the headline)** → C → F. E is deferred: it is the most novel option but it changes the
+task rather than the architecture, which muddies the comparison; better as follow-on work.
+
+Sites A–D and F together span the whole pipeline — input, transmit, decision, adaptation,
+receive — which is what makes the map in §1 a complete answer rather than three data points.
+
+**Expect F to hurt most, and treat that as a result.** The source encoder compresses 3072 pixels
+into the features everything downstream depends on, so cutting 379k parameters to ~2.7k there is a
+far larger capacity cut than the 37k → 2.2k at site B. Non-overlapping patches also discard the
+overlapping receptive fields the classical convolutions rely on. If reconstruction degrades most
+at F, that is direct evidence that a VQC belongs at a bottleneck rather than at feature
+extraction — a conclusion worth reporting, not a failed experiment.
 
 ---
 
@@ -382,8 +405,10 @@ a parameter-count and wall-clock table, and circuit gradient-variance curves.
 2. **Qubit count**: 8 recommended; 6 if throughput bites. Cost scales as 2^q.
 3. **Feed SNR into the quantum pre-linear?** Recommended yes — cheap, keeps the module
    channel-aware.
-4. **Site A and the fine-tune freeze.** `netP` is frozen for the last 100 epochs; a quantum policy
-   would stop learning there. Keep the schedule (and accept it) or exempt the site.
+4. **Sites A and F versus the fine-tune freeze.** The last 100 of 400 epochs freeze both `netP`
+   and `netSE`, so a quantum module at either site stops learning a quarter of the way through.
+   Keep the schedule (and say so) or exempt those sites — but decide deliberately, because the
+   asymmetry would otherwise be invisible in the results.
 5. **Site A and Fig. 5.** The fixed-rate figure overrides the policy via `forced_active`, so with a
    quantum policy that figure no longer exercises the quantum module. Decide what it means for
    that arm.
