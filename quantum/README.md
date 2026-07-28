@@ -24,29 +24,33 @@ model that then gets written up as a quantum result.
 
 ## Installing TorchQuantum
 
-**Do not `pip install torchquantum` on its own.** Its 0.1.8 dependency list is stale and pulls in
-`tensorflow`, `pyscf` (no Windows wheels, needs a C++ toolchain) and `qiskit<1.0.0`, none of which
-statevector simulation uses. Install the package without dependencies and add only what is
-actually imported:
+**Install from GitHub, not PyPI, and always with `--no-deps`:**
 
 ```bash
-pip install torchquantum --no-deps
+pip install --no-deps git+https://github.com/mit-han-lab/torchquantum.git
 pip install opt_einsum torchpack torchdiffeq tqdm dill pathos
-pip install "qiskit==0.46.3" qiskit-ibm-runtime "qiskit-aer==0.13.3"
-pip install "setuptools<81"      # torchquantum's qiskit path still imports pkg_resources
+pip install qiskit qiskit-aer qiskit-ibm-runtime
 ```
 
-Pins worth knowing:
+No version pins are needed. Two things make this work:
 
-| Pin | Why |
-|---|---|
-| `--no-deps` | avoids `tensorflow` and `pyscf` |
-| `qiskit==0.46.3`, `qiskit-aer==0.13.3` | 0.1.8 imports `qiskit.providers.aer`, removed in qiskit 1.x |
-| `setuptools<81` | `pkg_resources` was removed in 81 |
+- **GitHub over PyPI.** The last PyPI release (0.1.8, Feb 2024) imports `qiskit.providers.aer`,
+  a path qiskit removed in 1.0, so it cannot run against a current qiskit at all. GitHub `main`
+  is 0.3.0 and uses `qiskit_aer`, which works with qiskit 2.x.
+- **`--no-deps`.** The declared dependency list is stale and pulls in `tensorflow`, `pyscf` and
+  `qiskit<1.0.0`. None are used by statevector simulation, and `pyscf` has no Windows wheels, so
+  a plain `pip install torchquantum` fails outright there while merely wasting a gigabyte and
+  risking a CUDA clash elsewhere.
 
-Verified working with **torch 2.5.1+cu124** on an RTX 4070 (sm_89). Kaggle already ships a CUDA
-build of PyTorch, so install only the packages above there — never the pinned `torch` from
-`requirements.txt`.
+Verified working on **torch 2.5.1+cu124**, RTX 4070 (sm_89), with torchquantum 0.3.0,
+qiskit 2.5.1, qiskit-aer 0.17.2, qiskit-ibm-runtime 0.48.0, setuptools 83.
+
+Kaggle already ships a CUDA build of PyTorch, so install the packages above but never the pinned
+`torch` from `requirements.txt`.
+
+> If you are stuck on the PyPI release for some reason, it additionally needs
+> `qiskit==0.46.3`, `qiskit-aer==0.13.3` and `setuptools<81` (its qiskit path imports
+> `pkg_resources`, removed in setuptools 81). Prefer the GitHub install.
 
 ## Verify before building anything on it
 
@@ -58,16 +62,17 @@ python -m quantum.smoke_test --bench    # time each candidate site
 A successful import proves very little. What matters is that gradients reach the circuit
 parameters, because a silent failure there looks exactly like a model that will not learn.
 
-## Measured cost (RTX 4070 Laptop, 8 qubits unless noted)
+## Measured cost (RTX 4070 Laptop, torchquantum 0.3.0, 8 qubits unless noted)
 
 | Site | Batch | ms/step | Added min/epoch |
 |---|---|---|---|
-| policy / modulation | 128 | 62 | +0.4 |
-| projection | 8192 | 86 | +0.6 |
-| projection (4 layers) | 8192 | 156 | +1.0 |
+| policy / modulation | 128 | 44 | +0.3 |
+| projection | 8192 | 76 | +0.5 |
+| projection (4 layers) | 8192 | 131 | +0.9 |
 
 Classical baseline on the same GPU is ~0.5 min/epoch, so a 400-epoch hybrid run at the projection
-site takes roughly 7 h against 3.4 h classical.
+site takes roughly 6.5 h against 3.4 h classical. Re-run `--bench` on your own GPU rather than
+scaling these numbers.
 
 The useful surprise: a batch of 8192 costs about the same as 128. At this scale the simulation is
 bound by kernel launches rather than arithmetic, so folding the 64 spatial positions of an

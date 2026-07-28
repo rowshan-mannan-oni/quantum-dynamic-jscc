@@ -1,10 +1,13 @@
 # Quantum extras, on top of requirements.txt.
 #
-# Install torchquantum WITHOUT its dependency list, which is stale and pulls in
-# tensorflow, pyscf (no Windows wheels, needs a C++ toolchain) and qiskit<1.0.0,
-# none of which statevector simulation uses:
+# Install torchquantum from GitHub, not PyPI, and always WITHOUT its dependency
+# list. The last PyPI release (0.1.8) imports qiskit.providers.aer, a path
+# removed in qiskit 1.0, so it cannot run against a current qiskit. GitHub main
+# (0.3.0) uses qiskit_aer and works with qiskit 2.x. The declared dependencies
+# pull in tensorflow, pyscf and qiskit<1.0.0, none of which statevector
+# simulation uses, and pyscf has no Windows wheels.
 #
-#   pip install torchquantum --no-deps
+#   pip install --no-deps git+https://github.com/mit-han-lab/torchquantum.git
 #   pip install -r requirements-quantum.txt
 #
 # On Kaggle install these but never the pinned torch from requirements.txt.
@@ -17,10 +20,6 @@ tqdm
 dill
 pathos
 
-# torchquantum 0.1.8 imports qiskit.providers.aer, which qiskit 1.x removed
-qiskit==0.46.3
-qiskit-aer==0.13.3
+qiskit
+qiskit-aer
 qiskit-ibm-runtime
-
-# its qiskit code path still imports pkg_resources, dropped in setuptools 81
-setuptools<81
