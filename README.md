@@ -139,11 +139,20 @@ values to the converter and to whatever consumes its output.
 
 ### Running on Kaggle
 
-`Kaggle_Figures.ipynb` clones this repository and runs the scripts above, so the figures always
-come from the latest commit rather than a copy of the code pasted into a notebook. It needs
-Internet enabled (to clone) and your checkpoint attached as a Kaggle Dataset — weights are not
-stored in the repository. Do **not** install the pinned `torch` from `requirements.txt` on
-Kaggle; its image already ships a working CUDA build.
+Two notebooks clone this repository and call its scripts, so results always come from the
+latest commit rather than a copy of the code pasted into a notebook:
+
+| Notebook | Use it for |
+|---|---|
+| `Kaggle_Train_and_Figures.ipynb` | Full pipeline — train here (`MODE="train"`) *or* use an uploaded checkpoint (`MODE="weights"`), then plot |
+| `Kaggle_Figures.ipynb` | Figures only, from a checkpoint you already have |
+
+Both need Internet enabled (to clone). Weights are not stored in the repository, so
+`MODE="weights"` requires attaching your checkpoint as a Kaggle Dataset. Do **not** install the
+pinned `torch` from `requirements.txt` on Kaggle; its image already ships a working CUDA build.
+
+Start with `QUICK_TEST = True` to verify the pipeline in a few minutes before committing to the
+full 400-epoch run, which takes roughly 2–4 h on a T4/P100.
 
 ### Reproducing the rate–distortion curves
 

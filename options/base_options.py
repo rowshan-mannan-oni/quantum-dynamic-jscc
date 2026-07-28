@@ -44,6 +44,7 @@ class BaseOptions():
 
         # dataset parameters
         parser.add_argument('--batch_size', type=int, default=128, help='input batch size')
+        parser.add_argument('--num_workers', type=int, default=0, help='dataloader worker processes. Must stay 0 on Windows: the scripts run at module scope with no __main__ guard, so spawned workers re-import them. Use 2-4 on Linux')
         parser.add_argument('--max_dataset_size', type=int, default=float("inf"), help='Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.')
         
         # additional parameters

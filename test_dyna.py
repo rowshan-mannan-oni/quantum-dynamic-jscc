@@ -20,7 +20,7 @@ transform = transforms.Compose(
 trainset = torchvision.datasets.CIFAR10(root='./data', train=False,
                                         download=True, transform=transform)
 dataset = torch.utils.data.DataLoader(trainset, batch_size=1,
-                                        shuffle=False, num_workers=0, drop_last=True)
+                                        shuffle=False, num_workers=opt.num_workers, drop_last=True)
 dataset_size = len(dataset)
 print('#test images = %d' % dataset_size)
 

@@ -46,9 +46,6 @@ class FigureOptions(TestOptions):
                             help='SNR (dB) used for the per-class figure')
         parser.add_argument('--eval_batch', type=int, default=250,
                             help='batch size for evaluation')
-        parser.add_argument('--num_workers', type=int, default=2,
-                            help='dataloader workers; safe here because this '
-                                 'script has a __main__ guard')
         parser.add_argument('--dataroot', type=str, default='./data')
         return parser
 
