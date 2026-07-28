@@ -10,9 +10,10 @@ class TrainOptions(BaseOptions):
     def initialize(self, parser):
         parser = BaseOptions.initialize(self, parser)
         # network saving and loading parameters
-        parser.add_argument('--save_latest_freq', type=int, default=20480, help='frequency of saving the latest results')
+        parser.add_argument('--save_latest_freq', type=int, default=20480, help='overwrite the resume point every this many images, part way through an epoch. Must be a multiple of --batch_size or it rarely fires; 0 disables it and leaves --save_epoch_freq as the only resume point')
         parser.add_argument('--print_freq', type=int, default=10240, help='frequency of ploting losses')
-        parser.add_argument('--save_epoch_freq', type=int, default=40, help='frequency of saving checkpoints at the end of epochs')
+        parser.add_argument('--save_epoch_freq', type=int, default=5, help='overwrite the resume point every this many epochs')
+        parser.add_argument('--snapshot_freq', type=int, default=0, help='additionally keep a numbered, non-overwritten copy of the weights every this many epochs. 0 keeps none. Each costs about 25 MB and carries no optimizer state, so they are for evaluation curves rather than for resuming')
         parser.add_argument('--save_by_iter', action='store_true', help='whether saves model by iteration')
         parser.add_argument('--continue_train', action='store_true', help='continue training: load the latest model')
         parser.add_argument('--epoch_count', type=int, default=1, help='the starting epoch count, we save the model by <epoch_count>, <epoch_count>+<save_latest_freq>, ...')
@@ -27,6 +28,10 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--lr_fine', type=float, default=1e-5, help='learning rate for fine-tuning')
         parser.add_argument('--temp_init', type=int, default=5, help='initial temperature for Gumbel-Softmax')
         parser.add_argument('--eta', type=float, default=0.015, help='decay factor for annealling')
+
+        # best-checkpoint selection
+        parser.add_argument('--val_size', type=int, default=0, help='images held out of the training set to score the model each epoch, used to keep the best checkpoint. 0 scores on the training loss instead, which is cheap but tracks the objective being optimised rather than generalisation. Held-out images are never trained on, so this shrinks the training set')
+        parser.add_argument('--val_freq', type=int, default=1, help='score the model every this many epochs')
         
           
         self.isTrain = True

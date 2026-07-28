@@ -10,6 +10,17 @@ Detail lives in the commit messages; this is the map.
 
 ## Quantum work
 
+### 2026-07-29 — Best-checkpoint tracking
+
+| | |
+|---|---|
+| ✨ | **A run now keeps two sets of weights:** `latest_*` overwritten every `--save_epoch_freq` epochs, and `best_*` kept whenever the score improves. Evaluate either with `--epoch best` / `--epoch latest`. |
+| ✨ | `--val_size N` holds N images out of training to score on. Left at 0 it scores the epoch's training loss instead. The score is the training objective, not PSNR alone, so a model is not called better for reconstructing well while over-transmitting. |
+| ✨ | `--snapshot_freq` — numbered snapshots are now opt-in and separate from the rolling save. |
+| ⚠️ | `--save_epoch_freq` default **40 → 5**, and it no longer writes numbered snapshots (that is `--snapshot_freq`, default off). `--save_latest_freq 0` now disables the mid-epoch save. |
+| 🐞 | `latest` is now also written at the final epoch, so a run whose length is not a multiple of `--save_epoch_freq` no longer ends with a stale rolling checkpoint. |
+| 🐞 | Resuming reads the best score from the best checkpoint rather than the rolling one, which could otherwise be older and let a worse epoch overwrite a better `best`. |
+
 ### 2026-07-29 — Run cookbook, and an SSIM crash it exposed
 
 | | |

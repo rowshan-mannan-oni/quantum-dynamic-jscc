@@ -99,42 +99,69 @@ python train_dyna.py --gpu_ids 0 --lambda_reward 1.5e-3 --seed 0 --num_workers 4
 Answers "was the difference the circuit, or just the smaller layer?". Without it, a quantum result
 is ambiguous. `--quantum_site` and `--matched_site` cannot both be set.
 
-### How often to checkpoint
+### How often to checkpoint, and keeping the best
+
+A run writes **two** sets of weights:
+
+| Set | Written | Contains |
+|---|---|---|
+| `latest_*` | every `--save_epoch_freq` epochs, and at the final epoch | the newest model, overwritten each time |
+| `best_*` | whenever the score improves | the best model the run ever reached |
+
+```bash
+# save every 5 epochs, keep the best separately, hold out 2000 images to score on
+python train_dyna.py --gpu_ids 0 --lambda_reward 1.5e-3 \
+    --save_epoch_freq 5 --save_latest_freq 0 --val_size 2000
+```
+
+Evaluate either one with `--epoch`:
+
+```bash
+python make_figures.py --gpu_ids 0 --lambda_reward 1.5e-3 --epoch best
+python test_dyna.py    --gpu_ids 0 --lambda_reward 1.5e-3 --epoch latest
+```
+
+#### What "best" means
+
+| `--val_size` | Score | Cost |
+|---|---|---|
+| `0` (default) | mean training loss for the epoch | free, but measures the objective being optimised rather than generalisation |
+| `> 0` | same objective on held-out images | a few seconds per epoch, and those images are removed from training |
+
+The score is the training objective — `lambda_L2 · MSE + lambda_reward · groups` — not PSNR alone,
+so a model is not called better for reconstructing well while transmitting more than it should.
+Scoring runs at a fixed grid of SNRs with a fixed noise seed, so epochs are comparable rather than
+a lottery, and the RNG state is restored afterwards so scoring does not perturb training.
+
+> `--val_size 2000` trains on 48,000 images instead of 50,000, so it is not directly comparable
+> with a run that used the whole set. Use the same value across every arm being compared.
+
+Best-tracking earns its keep on the quantum arms: a run does not necessarily end at its best
+point, and variational circuits can destabilise late in training.
+
+#### The other frequency flags
 
 | Flag | Unit | Default | Writes |
 |---|---|---|---|
-| `--save_latest_freq` | **images** | 20480 | overwrites `latest_*` plus optimizer state — **sets resume granularity** |
-| `--save_epoch_freq` | **epochs** | 40 | numbered `{epoch}_net_*.pth` snapshots, weights only |
+| `--save_epoch_freq` | epochs | 5 | overwrites `latest_*` plus optimizer state |
+| `--save_latest_freq` | **images** | 20480 | same, part way through an epoch; `0` disables |
+| `--snapshot_freq` | epochs | 0 (off) | numbered `{epoch}_net_*.pth`, weights only |
+| `--val_freq` | epochs | 1 | how often to score for `best` |
 
-```bash
-# resume point every epoch, numbered snapshot every 10
-python train_dyna.py --gpu_ids 0 --lambda_reward 1.5e-3 \
-    --save_latest_freq 49920 --save_epoch_freq 10
-```
-
-At `--batch_size 128` an epoch is 390 batches = **49,920 images**, so that is once per epoch; the
-default fires about 2.4 times per epoch.
-
-> **`--save_latest_freq` must be a multiple of `--batch_size`.** The test is
+> **`--save_latest_freq` counts images and must be a multiple of `--batch_size`.** The test is
 > `total_iters % save_latest_freq == 0` and `total_iters` advances by `batch_size`, so `20000` at
-> batch 128 almost never fires. The default `20480` is exactly `160 × 128`.
+> batch 128 almost never fires. The default `20480` is exactly `160 × 128`; one epoch is 49,920.
 
-> **Only `latest` can be resumed from.** Numbered snapshots skip the optimizer state, which is
-> twice the size of the weights. `--save_epoch_freq` is for evaluation snapshots; lower
-> `--save_latest_freq` for finer crash recovery.
+> **Only `latest` and `best` can be resumed from.** Numbered snapshots skip the optimizer state,
+> which is twice the size of the weights, so they are for evaluation curves.
 
 Cost per save: weights 25.3 MB, optimizer state 50.5 MB.
 
 | Situation | Setting |
 |---|---|
 | Kaggle, or anywhere a session can be cut short | `--save_latest_freq 24960` (twice an epoch) |
-| Long local run, saving disk | `--save_epoch_freq 50` |
-| Want a PSNR-against-epoch curve | `--save_epoch_freq 10` → 40 snapshots, about 1 GB |
-| Debugging | `--save_epoch_freq 1` — 400 epochs is about **10 GB** |
-
-`--save_by_iter` sends the periodic saves to `iter_<n>_net_*.pth` instead of overwriting `latest`.
-It keeps every intermediate, but `latest` then only advances at `--save_epoch_freq` boundaries, so
-a resume can lose more than you expect.
+| Long local run, disk is tight | `--save_epoch_freq 10 --save_latest_freq 0` |
+| Want a PSNR-against-epoch curve | `--snapshot_freq 10` → 40 snapshots, about 1 GB |
 
 ### Resume an interrupted run
 

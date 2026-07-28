@@ -21,8 +21,26 @@ transform = transforms.Compose(
 
 trainset = torchvision.datasets.CIFAR10(root='./data', train=True,
                                         download=True, transform=transform)
+
+# Optionally hold images out to score the model each epoch. The held-out split
+# uses the evaluation transform, since scoring on randomly augmented images
+# would measure the augmentation as much as the model.
+valset = None
+if opt.val_size > 0:
+    eval_transform = transforms.Compose(
+        [transforms.ToTensor(),
+         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+    val_source = torchvision.datasets.CIFAR10(root='./data', train=True,
+                                              download=True, transform=eval_transform)
+    cut = len(trainset) - opt.val_size
+    valset = torch.utils.data.Subset(val_source, range(cut, len(val_source)))
+    trainset = torch.utils.data.Subset(trainset, range(cut))
+    print('#held-out images = %d (training on %d)' % (opt.val_size, cut))
+
 dataset = torch.utils.data.DataLoader(trainset, batch_size=opt.batch_size,
                                         shuffle=True, num_workers=opt.num_workers, drop_last=True)
+val_loader = None if valset is None else torch.utils.data.DataLoader(
+    valset, batch_size=opt.batch_size, shuffle=False, num_workers=opt.num_workers)
 dataset_size = len(dataset)
 print('#training images = %d' % dataset_size)
 
@@ -65,13 +83,55 @@ def apply_stage(epoch):
     return stage, lr, freeze
 
 
-def save_all(tag, completed_epoch):
+def save_all(tag, completed_epoch, extra=None):
     """Save the networks plus the state needed to resume from them."""
+    state = {'epoch': completed_epoch, 'temp': model.temp, 'best_score': best_score}
+    state.update(extra or {})
     model.save_networks(tag)
-    model.save_training_state(tag, {'epoch': completed_epoch, 'temp': model.temp})
+    model.save_training_state(tag, state)
+
+
+@torch.no_grad()
+def validate():
+    """Score the model on the held-out split, lower is better.
+
+    Uses the same objective that is being optimised, so a model is not called
+    better for reconstructing well while transmitting more than it should.
+
+    Two things make the score comparable across epochs rather than a lottery:
+    evaluation runs at a fixed grid of SNRs instead of the random draw used in
+    training, and the channel noise is drawn from a fixed seed. The RNG state is
+    restored afterwards so scoring does not perturb the training stream.
+    """
+    rng_state = torch.get_rng_state()
+    cuda_state = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+    torch.manual_seed(12345)
+
+    was_training = opt.isTrain
+    opt.isTrain = False        # fixed SNR, and the hard mask that inference uses
+    model.eval()
+
+    snrs = [opt.SNR_MIN, (opt.SNR_MIN + opt.SNR_MAX) // 2, opt.SNR_MAX]
+    total, batches = 0.0, 0
+    for images, _ in val_loader:
+        model.set_input(images)
+        for snr in snrs:
+            model.opt.SNR = snr
+            model.forward()
+            mse = torch.mean((model.fake - model.real_B) ** 2).item()
+            total += opt.lambda_L2 * mse + opt.lambda_reward * model.count.mean().item()
+            batches += 1
+
+    opt.isTrain = was_training
+    model.train()
+    torch.set_rng_state(rng_state)
+    if cuda_state is not None:
+        torch.cuda.set_rng_state_all(cuda_state)
+    return total / max(batches, 1)
 
 
 # Pick up where a previous run stopped
+best_score = float('inf')
 start_epoch = opt.epoch_count
 if opt.continue_train:
     state = model.load_training_state(opt.epoch)
@@ -81,8 +141,21 @@ if opt.continue_train:
     else:
         start_epoch = state['epoch'] + 1
         model.temp = state['temp']
+        best_score = state.get('best_score', float('inf'))
         print('Resuming after epoch %d: starting at epoch %d with temperature %.5f'
               % (state['epoch'], start_epoch, model.temp))
+
+    # The rolling save can be older than the best one, and would then carry a
+    # worse best_score, letting a later mediocre epoch overwrite a better best.
+    # The best checkpoint's own record is the authority.
+    best_state_path = os.path.join(path, 'best_training_state.pth')
+    if os.path.exists(best_state_path):
+        recorded = torch.load(best_state_path, map_location='cpu',
+                              weights_only=False).get('best_score')
+        if recorded is not None and recorded < best_score:
+            best_score = recorded
+    if best_score < float('inf'):
+        print('Best score so far: %.5f' % best_score)
 
 if start_epoch > total_epoch:
     print('Nothing to do: epoch %d is already past the %d epoch schedule.'
@@ -94,6 +167,7 @@ for epoch in range(start_epoch, total_epoch + 1):    # outer loop for different 
     epoch_start_time = time.time()  # timer for entire epoch
     iter_data_time = time.time()    # timer for data loading per iteration
     epoch_iter = 0                  # the number of training iterations in current epoch, reset to 0 every epoch
+    epoch_loss, epoch_batches = 0.0, 0
 
     # Select the learning rate and freezing for this epoch
     stage, lr, freeze = apply_stage(epoch)
@@ -114,6 +188,8 @@ for epoch in range(start_epoch, total_epoch + 1):    # outer loop for different 
 
         model.set_input(data[0])         # unpack data from dataset and apply preprocessing
         model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
+        epoch_loss += model.loss_G.item()
+        epoch_batches += 1
 
         if total_iters % opt.print_freq == 0:    # print training losses and save logging information to the disk
             losses = model.get_current_losses()
@@ -126,7 +202,7 @@ for epoch in range(start_epoch, total_epoch + 1):    # outer loop for different 
             with open(log_name, "a") as log_file:
                 log_file.write('%s\n' % message)  # save the message
 
-        if total_iters % opt.save_latest_freq == 0:   # cache our latest model every <save_latest_freq> iterations
+        if opt.save_latest_freq and total_iters % opt.save_latest_freq == 0:
             print('saving the latest model (epoch %d, total_iters %d)' % (epoch, total_iters))
             save_suffix = 'iter_%d' % total_iters if opt.save_by_iter else 'latest'
             # This epoch is unfinished, so resume by repeating it from the start
@@ -138,10 +214,29 @@ for epoch in range(start_epoch, total_epoch + 1):    # outer loop for different 
     model.update_temp()
     print(f'Update temperature to {model.temp}')
 
-    if epoch % opt.save_epoch_freq == 0:              # cache our model every <save_epoch_freq> epochs
+    # Score the model and keep the best one separately from the rolling save.
+    # Worth having because a run does not necessarily end at its best point:
+    # variational circuits in particular can destabilise late in training.
+    if epoch % opt.val_freq == 0:
+        if val_loader is not None:
+            score, label = validate(), 'val loss'
+        else:
+            score, label = epoch_loss / max(epoch_batches, 1), 'train loss'
+        if score < best_score:
+            best_score = score
+            save_all('best', epoch, {'best_epoch': epoch})
+            print('new best (%s %.5f at epoch %d), saved as best_*' % (label, score, epoch))
+        else:
+            print('%s %.5f (best %.5f)' % (label, score, best_score))
+
+    # Overwrite the rolling resume point. Always on the final epoch too, so a
+    # completed run does not leave 'latest' short of where it actually finished.
+    if epoch % opt.save_epoch_freq == 0 or epoch == total_epoch:
         print('saving the model at the end of epoch %d, iters %d' % (epoch, total_iters))
         save_all('latest', epoch)
-        # Numbered snapshots are for evaluation, and resuming always goes
+
+    if opt.snapshot_freq and epoch % opt.snapshot_freq == 0:
+        # Numbered snapshots are for evaluation curves, and resuming always goes
         # through 'latest', so they skip the (much larger) optimizer state
         model.save_networks(epoch)
 
