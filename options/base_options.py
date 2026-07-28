@@ -1,7 +1,58 @@
 import argparse
 import os
+import random
+
+import numpy as np
 import torch
 import models
+
+
+def parse_sites(value):
+    """Split a comma separated --quantum_site / --matched_site value."""
+    if not value or value == 'none':
+        return []
+    return [site.strip() for site in value.split(',') if site.strip()]
+
+
+def run_name(opt):
+    """Checkpoint folder name for a run.
+
+    Every script rebuilds this from the options rather than taking a path, so it
+    has to be derived in exactly one place. It previously appeared as a literal
+    expression in four files, which is how a run once wrote to 'L2_1' and was
+    then looked for under 'L2_1.0'.
+
+    The classical name is unchanged, so existing checkpoints still resolve. Any
+    setting that produces a different model extends it, so a quantum run cannot
+    overwrite the classical baseline it is being compared against.
+    """
+    name = 'C%s_L2_%s_re_%s_%s' % (opt.C_channel, opt.lambda_L2,
+                                   opt.lambda_reward, opt.select)
+
+    quantum = parse_sites(getattr(opt, 'quantum_site', 'none'))
+    matched = parse_sites(getattr(opt, 'matched_site', 'none'))
+    if quantum:
+        name += '_q%s-q%dl%d' % ('+'.join(quantum), opt.n_qubits, opt.vqc_layers)
+    elif matched:
+        name += '_m%s-q%d' % ('+'.join(matched), opt.n_qubits)
+
+    seed = getattr(opt, 'seed', None)
+    if seed is not None:
+        name += '_s%d' % seed
+    return name
+
+
+def set_seed(seed):
+    """Seed every RNG the training path draws from.
+
+    Enough to make two arms see the same initialisation and data order. It does
+    not force deterministic cuDNN kernels, which would cost throughput for
+    run-to-run bit-exactness this comparison does not need.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 class BaseOptions():
@@ -37,9 +88,11 @@ class BaseOptions():
         parser.add_argument('--G_n', type=int, default=4, help='number of non-selective groups')
         parser.add_argument('--G_s', type=int, default=4, help='number of selective groups')
         parser.add_argument('--select', type=str, default='hard', help='using hard or soft mask [hard | soft]')
-        parser.add_argument('--quantum_site', type=str, default='none', help="which module to replace with a quantum one; 'none' keeps the model fully classical. See quantum/modules.py for the registered sites")
-        parser.add_argument('--n_qubits', type=int, default=8, help='qubits in the variational circuit. Simulation cost grows as 2**n_qubits')
+        parser.add_argument('--quantum_site', type=str, default='none', help="module(s) to replace with a quantum one, comma separated; 'none' keeps the model fully classical. See quantum/modules.py for the registered sites")
+        parser.add_argument('--matched_site', type=str, default='none', help="module(s) to replace with a classical control of the same shape and parameter budget as the quantum module. Answers whether a difference came from the circuit or just from the smaller layer. Mutually exclusive with --quantum_site")
+        parser.add_argument('--n_qubits', type=int, default=8, help='qubits in the variational circuit, and the bottleneck width of the matched control. Simulation cost grows as 2**n_qubits')
         parser.add_argument('--vqc_layers', type=int, default=2, help='depth of the variational circuit. Deeper is not safer: random deep circuits have exponentially vanishing gradients')
+        parser.add_argument('--seed', type=int, default=None, help='random seed. Unset reproduces the original unseeded behaviour; set it for any run being compared against another, and vary it to separate a real effect from run-to-run noise')
         parser.add_argument('--SNR_MAX', type=int, default=20, help='maximum SNR')
         parser.add_argument('--SNR_MIN', type=int, default=0, help='minimum SNR')
         parser.add_argument('--lambda_reward', type=float, default=1.5e-3, help='weight for efficiency loss')
@@ -87,11 +140,7 @@ class BaseOptions():
         return parser.parse_args()
 
     def print_options(self, opt):
-        """Print and save options
-
-        It will print both current options and default values(if different).
-        It will save options into a text file / [checkpoints_dir] / opt.txt
-        """
+        """Print the options, and return the text so a run can record it."""
         message = ''
         message += '----------------- Options ---------------\n'
         for k, v in sorted(vars(opt).items()):
@@ -102,19 +151,62 @@ class BaseOptions():
             message += '{:>25}: {:<30}{}\n'.format(str(k), str(v), comment)
         message += '----------------- End -------------------'
         print(message)
+        return message
 
+    def save_options(self, opt):
+        """Write the options next to the checkpoints as a record of the run.
+
+        Called once the checkpoint folder exists. With several arms differing
+        only by a flag, the folder name alone is a thin provenance record.
+        """
+        with open(os.path.join(opt.checkpoints_dir, opt.name, 'opt.txt'), 'w') as fh:
+            fh.write(opt._options_text + '\n')
+
+    def validate_sites(self, opt):
+        """Reject site selections that cannot be honoured, before any training."""
+        quantum = parse_sites(opt.quantum_site)
+        matched = parse_sites(getattr(opt, 'matched_site', 'none'))
+
+        if quantum and matched:
+            raise SystemExit(
+                '--quantum_site and --matched_site are mutually exclusive: the '
+                'matched control exists to isolate the circuit, so a run cannot '
+                'be both arms at once.')
+
+        if not quantum:
+            return
+
+        try:
+            import quantum as quantum_pkg
+        except ImportError as exc:
+            raise SystemExit('--quantum_site %s needs the quantum package and its '
+                             'dependencies: %s\nSee quantum/README.md.'
+                             % (opt.quantum_site, exc))
+
+        unknown = [s for s in quantum if s not in quantum_pkg.available_sites()]
+        if unknown:
+            raise SystemExit('unknown quantum site(s) %s; available: %s'
+                             % (unknown, quantum_pkg.available_sites()))
 
     def parse(self):
         """Parse our options, create checkpoints directory suffix, and set up gpu device."""
         opt = self.gather_options()
         opt.isTrain = self.isTrain   # train or test
 
+        self.validate_sites(opt)
+
+        # Derived in one place so every script agrees on where a run lives
+        opt.name = run_name(opt)
+
         # process opt.suffix
         if opt.suffix:
             suffix = ('_' + opt.suffix.format(**vars(opt))) if opt.suffix != '' else ''
             opt.name = opt.name + suffix
 
-        self.print_options(opt)
+        if opt.seed is not None:
+            set_seed(opt.seed)
+
+        opt._options_text = self.print_options(opt)
 
         # set gpu ids
         str_ids = opt.gpu_ids.split(',')

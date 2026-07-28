@@ -201,8 +201,7 @@ def reconstructions(model, testset, opt, cpp_per_group, out_dir, n_show=8, snrs=
 
 
 def main():
-    opt = FigureOptions().parse()
-    opt.name = (f'C{opt.C_channel}_L2_{opt.lambda_L2}_re_{opt.lambda_reward}_{opt.select}')
+    opt = FigureOptions().parse()      # opt.name is derived in BaseOptions.parse
     os.makedirs(opt.results_dir, exist_ok=True)
     snrs = [int(s) for s in opt.snr_list.split(',')]
 

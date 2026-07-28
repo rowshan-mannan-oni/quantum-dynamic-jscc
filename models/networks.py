@@ -1,10 +1,70 @@
 # Copyright (C) 2017 NVIDIA Corporation. All rights reserved.
 # Licensed under the CC BY-NC-SA 4.0 license (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
+import math
 import torch
 import torch.nn as nn
 from torch.nn import init
 import functools
 from torch.nn import functional as F
+
+
+class MatchedBottleneck(nn.Module):
+    """Classical control with the same shape and size as the quantum module.
+
+    Mirrors quantum.layers.HybridVQC exactly, with the circuit replaced by a
+    classical map of the same width:
+
+        Linear(in -> w) -> tanh*pi -> Linear(w -> w) -> tanh -> Linear(w -> out)
+
+    A quantum module is far smaller than the layer it replaces (about 2.2k
+    against 37k at the projection site), so comparing it only against the
+    original leaves two explanations for any difference: the circuit, or the
+    bottleneck. This arm holds the bottleneck fixed and removes the circuit, so
+    the remaining difference is attributable.
+
+    The inner tanh matters: PauliZ expectations land in [-1, 1], so the control
+    has to hand the output layer the same range.
+    """
+
+    def __init__(self, in_features, out_features, width=8):
+        super().__init__()
+        self.pre = nn.Linear(in_features, width)
+        self.mid = nn.Linear(width, width)
+        self.post = nn.Linear(width, out_features)
+
+    def forward(self, x):
+        angles = torch.tanh(self.pre(x)) * math.pi
+        return self.post(torch.tanh(self.mid(angles)))
+
+
+def _sites(value):
+    if not value or value == 'none':
+        return []
+    return [s.strip() for s in value.split(',') if s.strip()]
+
+
+def build_swappable(opt, site, classical, in_features, out_features):
+    """Return the module to use at <site>: quantum, matched, or classical.
+
+    <classical> is a callable building the original module, so it is only
+    constructed when it is actually used.
+
+    The import of `quantum` is local: deleting that package leaves classical and
+    matched runs working, and only fails runs that asked for a circuit.
+    """
+    if opt is None:
+        return classical()
+
+    if site in _sites(getattr(opt, 'quantum_site', 'none')):
+        from quantum import build_site
+        return build_site(site, opt, in_features=in_features,
+                          out_features=out_features)
+
+    if site in _sites(getattr(opt, 'matched_site', 'none')):
+        return MatchedBottleneck(in_features, out_features,
+                                 width=getattr(opt, 'n_qubits', 8))
+
+    return classical()
 
 
 
@@ -174,9 +234,9 @@ def define_dynaG(output_nc, ngf, max_ngf, n_downsample, C_channel, n_blocks, nor
     net = Generator_dyna(output_nc=output_nc, ngf=ngf, max_ngf=max_ngf, C_channel=C_channel, n_blocks=n_blocks, n_downsampling=n_downsample, norm_layer=norm_layer, padding_type="reflect")
     return init_net(net, init_type, init_gain, gpu_ids)
 
-def define_dynaP(ngf, max_ngf, n_downsample, init_type='kaiming', init_gain=0.02, gpu_ids=[], N_output=7):
+def define_dynaP(ngf, max_ngf, n_downsample, init_type='kaiming', init_gain=0.02, gpu_ids=[], N_output=7, opt=None):
     net = None
-    net = Policy_dyna(ngf=ngf, max_ngf=max_ngf, n_downsampling=n_downsample, N_output=N_output)
+    net = Policy_dyna(ngf=ngf, max_ngf=max_ngf, n_downsampling=n_downsample, N_output=N_output, opt=opt)
     return init_net(net, 'normal', 0.002, gpu_ids)
 
 def define_SE(input_nc, ngf, max_ngf, n_downsample, norm='instance', init_type='normal', init_gain=0.02, gpu_ids=[]):
@@ -297,7 +357,7 @@ class Generator_dyna(nn.Module):
 
 
 class Policy_dyna(nn.Module):
-    def __init__(self, ngf=64, max_ngf=256, N_output=7, n_downsampling=2):
+    def __init__(self, ngf=64, max_ngf=256, N_output=7, n_downsampling=2, opt=None):
 
         super(Policy_dyna, self).__init__()
 
@@ -306,11 +366,16 @@ class Policy_dyna(nn.Module):
         mult = 2 ** n_downsampling
         ngf_dim = min(ngf * mult, max_ngf)
 
-        # Policy network
-        model = [nn.Linear(ngf_dim + 1, 64), activation, nn.BatchNorm1d(64),
-                 nn.Linear(64, 64), activation, nn.BatchNorm1d(64),
-                 nn.Linear(64, N_output)]
-        self.model_gate = nn.Sequential(*model)
+        # Policy network. The gate maps pooled features plus the SNR to one
+        # logit per rate, and is the 'policy' site.
+        def classical_gate():
+            return nn.Sequential(nn.Linear(ngf_dim + 1, 64), activation, nn.BatchNorm1d(64),
+                                 nn.Linear(64, 64), activation, nn.BatchNorm1d(64),
+                                 nn.Linear(64, N_output))
+
+        self.model_gate = build_swappable(opt, 'policy', classical_gate,
+                                          in_features=ngf_dim + 1,
+                                          out_features=N_output)
 
     def forward(self, z, SNR, temp=5):
 

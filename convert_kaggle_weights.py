@@ -17,6 +17,7 @@ import os
 import torch
 
 from models import networks
+from options.base_options import run_name
 
 NET_NAMES = ['SE', 'CE', 'G', 'P']
 
@@ -69,9 +70,9 @@ def main():
         raise SystemExit(f'{args.src} is not a notebook checkpoint; '
                          f'expected a dict containing {NET_NAMES}')
 
-    # test_dyna.py / train_dyna.py rebuild this name from the same expression.
-    name = (f'C{args.C_channel}_L2_{args.lambda_L2}_re_{args.lambda_reward}_{args.select}')
-    out_dir = os.path.join(args.checkpoints_dir, name)
+    # Derived by the same function the other scripts use, so a converted
+    # checkpoint always lands where they will look for it.
+    out_dir = os.path.join(args.checkpoints_dir, run_name(args))
     os.makedirs(out_dir, exist_ok=True)
 
     targets = {n: os.path.join(out_dir, f'{args.epoch}_net_{n}.pth') for n in NET_NAMES}

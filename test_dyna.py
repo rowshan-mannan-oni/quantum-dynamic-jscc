@@ -24,7 +24,6 @@ dataset = torch.utils.data.DataLoader(trainset, batch_size=1,
 dataset_size = len(dataset)
 print('#test images = %d' % dataset_size)
 
-opt.name = 'C' + str(opt.C_channel) + '_L2_' + str(opt.lambda_L2) + '_re_' + str(opt.lambda_reward) + '_' + opt.select 
 
 model = create_model(opt)      # create a model given opt.model and other options
 model.setup(opt)               # regular setup: load and print networks; create schedulers

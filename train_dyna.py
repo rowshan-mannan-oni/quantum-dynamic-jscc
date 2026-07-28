@@ -9,7 +9,8 @@ import torchvision
 import torchvision.transforms as transforms
 
 # Extract the options
-opt = TrainOptions().parse()
+options = TrainOptions()
+opt = options.parse()
 
 # Prepare the dataset
 transform = transforms.Compose(
@@ -26,11 +27,12 @@ dataset_size = len(dataset)
 print('#training images = %d' % dataset_size)
 
 
-# Create the checkpoint folder
-opt.name = 'C' + str(opt.C_channel) + '_L2_' + str(opt.lambda_L2) + '_re_' + str(opt.lambda_reward) + '_' + opt.select
+# Create the checkpoint folder. opt.name is derived in BaseOptions.parse so that
+# every script resolves the same run to the same folder.
 path = os.path.join(opt.checkpoints_dir, opt.name)
 if not os.path.exists(path):
     os.makedirs(path)
+options.save_options(opt)      # provenance record next to the checkpoints
 
 # Initialize the model
 model = create_model(opt)      # create a model given opt.model and other options
