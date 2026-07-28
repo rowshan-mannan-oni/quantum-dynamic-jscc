@@ -7,6 +7,10 @@ Checkpoints/
 *.log
 loss_log.txt
 
+# Locally-held weights and the standalone Kaggle notebook they came from
+Weight/
+Dynamic_JSCC_Kaggle.ipynb
+
 # Python
 __pycache__/
 *.py[cod]

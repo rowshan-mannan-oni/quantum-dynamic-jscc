@@ -10,3 +10,6 @@
 torch==2.5.1
 torchvision==0.20.1
 numpy==1.26.4
+
+# SSIM metric in test_dyna.py
+scikit-image==0.22.0

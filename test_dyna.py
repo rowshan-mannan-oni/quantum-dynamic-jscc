@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as transforms
+from skimage.metrics import structural_similarity
 
 
 # Extract the options
@@ -32,8 +33,8 @@ model.eval()
 PSNR_list = []
 SSIM_list = []
 N_channel_list = []
-count_list = [[]]*10
-PSNR_class_list = [[]]*10
+count_list = [[] for _ in range(10)]
+PSNR_class_list = [[] for _ in range(10)]
 
 for i, data in enumerate(dataset):
     if i >= opt.num_test:  # only apply our model to opt.num_test images.
@@ -62,13 +63,23 @@ for i, data in enumerate(dataset):
     PSNR = 10 * np.log10((255**2) / diff)
     PSNR_list.append(np.mean(PSNR))
 
+    # SSIM on the same int8 images, using the Gaussian-weighted formulation of
+    # Wang et al. (as reported in the image compression literature)
+    SSIM = [structural_similarity(origin_int8[j], img_gen_int8[j], channel_axis=2,
+                                  data_range=255, gaussian_weights=True, sigma=1.5,
+                                  use_sample_covariance=False)
+            for j in range(img_gen_int8.shape[0])]
+    SSIM_list.append(np.mean(SSIM))
+
     PSNR_class_list[data[1].item()].append(PSNR)
 
     if i % 100 == 0:
         print(i)
 
-counts = [np.mean(count_list[i]) for i in range(10)]
-PSNRs = [np.mean(np.hstack(PSNR_class_list[i])) for i in range(10)]
+# A class can be empty when --num_test is small, so guard the aggregation
+counts = [np.mean(count_list[i]) if count_list[i] else float('nan') for i in range(10)]
+PSNRs = [np.mean(np.hstack(PSNR_class_list[i])) if PSNR_class_list[i] else float('nan')
+         for i in range(10)]
 
 print(f'Mean PSNR: {np.mean(PSNR_list):.3f}')
 print(f'Mean SSIM: {np.mean(SSIM_list):.3f}')
