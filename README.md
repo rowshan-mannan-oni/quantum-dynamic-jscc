@@ -154,6 +154,20 @@ pinned `torch` from `requirements.txt` on Kaggle; its image already ships a work
 Start with `QUICK_TEST = True` to verify the pipeline in a few minutes before committing to the
 full 400-epoch run, which takes roughly 2–4 h on a T4/P100.
 
+### Quantum variant
+
+All quantum code lives in [`quantum/`](quantum/), and `--quantum_site` selects which module is
+replaced (`none`, the default, keeps the model fully classical). Because the two arms share the
+whole pipeline, a classical and a hybrid run differ only in that one module — which is what makes
+the comparison fair rather than merely asserted. Deleting `quantum/` removes the extension.
+
+TorchQuantum needs a specific install recipe; its published dependency list is stale and pulls in
+`tensorflow` and `pyscf`. See [`quantum/README.md`](quantum/README.md), then verify with:
+
+```bash
+python -m quantum.smoke_test --bench
+```
+
 ### Reproducing the rate–distortion curves
 
 The paper's tradeoff curves are traced by sweeping `--lambda_reward` (each value is one operating point), for both `hard` and `soft` selection. Because the model is *dynamic*, a single trained model already yields a spread of operating points.
