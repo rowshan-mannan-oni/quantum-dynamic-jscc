@@ -43,7 +43,20 @@ No version pins are needed. Two things make this work:
   risking a CUDA clash elsewhere.
 
 Verified working on **torch 2.5.1+cu124**, RTX 4070 (sm_89), with torchquantum 0.3.0,
-qiskit 2.5.1, qiskit-aer 0.17.2, qiskit-ibm-runtime 0.48.0, setuptools 83.
+qiskit 2.5.1, qiskit-aer 0.17.2, qiskit-ibm-runtime 0.48.0, setuptools 83, numpy 2.2.6.
+
+> **These installs upgrade numpy to 2.x**, because qiskit requires it. Anything compiled against
+> the numpy 1.x ABI then fails at import with `numpy.dtype size changed, may indicate binary
+> incompatibility` — scikit-image 0.22 does, which is why `requirements.txt` asks for
+> `scikit-image>=0.25`. Install the quantum extras *before* concluding the classical side works.
+>
+> If an older qiskit is already present, uninstall `qiskit`, `qiskit-terra` and `qiskit-aer`
+> first: qiskit >=1.0 refuses to run alongside `qiskit-terra`, and `--upgrade` alone does not
+> resolve it.
+>
+> Both arms share one environment, so after changing quantum dependencies re-check the classical
+> side too, not just the smoke test:
+> `python test_dyna.py --gpu_ids 0 --lambda_reward 1.5e-3 --SNR 10 --num_test 300`
 
 Kaggle already ships a CUDA build of PyTorch, so install the packages above but never the pinned
 `torch` from `requirements.txt`.

@@ -253,6 +253,98 @@ learn.
 
 ---
 
+## 9a. Compatibility
+
+This stack sits between a 2021 codebase, a GPU generation that codebase predates, and a quantum
+library that tracks neither. Most of the setup time so far went here, and every item below was hit
+in practice rather than anticipated.
+
+### Verified working set
+
+| Package | Version | Note |
+|---|---|---|
+| torch / torchvision | 2.5.1+cu124 / 0.20.1+cu124 | CUDA wheel index, not PyPI default |
+| numpy | 2.2.6 | see the numpy trap below |
+| scikit-image | 0.25.2 | must be ≥0.24 under numpy 2 |
+| matplotlib | 3.10.9 | |
+| torchquantum | 0.3.0 (GitHub `main`) | **not** the PyPI release |
+| qiskit / qiskit-aer / qiskit-ibm-runtime | 2.5.1 / 0.17.2 / 0.48.0 | |
+| setuptools | 83.0.0 | no pin needed with the GitHub install |
+
+Verified on Windows 11 + RTX 4070 Laptop (sm_89). The Linux + RTX 3090 (sm_86) target should be
+easier, not harder: the one Windows-specific failure (`pyscf`) disappears there.
+
+### The traps, and why each bites
+
+**1. The original PyTorch cannot run on your GPU.** Not a preference — 2021 builds have no
+compiled kernels for sm_86/sm_89. Any "reproduce the original environment" instinct fails here.
+
+**2. TorchQuantum's PyPI release is unusable.** 0.1.8 (Feb 2024) imports
+`qiskit.providers.aer`, a path removed in qiskit 1.0, at module scope. No qiskit version
+satisfies both it and a modern install. GitHub `main` (0.3.0) uses `qiskit_aer` and works with
+qiskit 2.x. **Install from GitHub.**
+
+**3. `--no-deps` is mandatory on every platform.** TorchQuantum's declared dependencies include
+`tensorflow` and `pyscf`, neither used by statevector simulation. `pyscf` has no Windows wheels
+and needs a C++ toolchain, so the install fails outright there; on Linux it merely wastes a
+gigabyte and puts a second framework's CUDA runtime next to PyTorch's.
+
+**4. numpy 2 is forced on you, and it breaks compiled packages.** Installing the quantum extras
+pulls qiskit, which upgrades numpy to 2.x — silently, after `requirements.txt` pinned 1.26.4.
+Anything compiled against the numpy 1.x ABI then fails at *import*:
+
+```
+ValueError: numpy.dtype size changed, may indicate binary incompatibility.
+            Expected 96 from C header, got 88 from PyObject
+```
+
+This hit scikit-image 0.22 and would have broken `test_dyna.py`'s SSIM the first time it ran
+after the quantum install. `requirements.txt` now requires `numpy>=2` and `scikit-image>=0.25`
+so both halves agree, rather than pinning numpy low and having it overridden.
+
+**5. qiskit ≥1.0 cannot coexist with `qiskit-terra`.** Upgrading over an older qiskit raises
+`ImportError: Qiskit is installed in an invalid environment`. Uninstall `qiskit`, `qiskit-terra`
+and `qiskit-aer` before installing the modern stack; a plain `--upgrade` does not fix it.
+
+**6. `pkg_resources` was removed in setuptools 81.** Only affects the old pinned path; the
+GitHub install with a current `qiskit-ibm-runtime` needs no setuptools pin.
+
+**7. Windows dataloader workers.** The scripts execute at module scope with no
+`if __name__ == '__main__'` guard, so spawned workers re-import them and the run dies. Hence
+`--num_workers` defaulting to 0. **On the Linux box, set it to 2–4** — with CIFAR-10's small
+images, data loading is otherwise the bottleneck.
+
+**8. Kaggle: never install the pinned torch.** Its image ships a working CUDA build; replacing it
+breaks the GPU. Install only scikit-image, matplotlib and the quantum extras there.
+
+### Both arms share one environment
+
+The classical and quantum arms run in the same environment, which is what makes the comparison
+practical — but it also means a quantum-side dependency change can break the classical arm, as
+the numpy episode shows. After touching quantum dependencies, re-check both:
+
+```bash
+python -m quantum.smoke_test          # circuit runs, gradients flow
+python test_dyna.py --gpu_ids 0 --lambda_reward 1.5e-3 --SNR 10 --num_test 300
+```
+
+Last verified together: PSNR 28.98, SSIM 0.933, 5.13 groups at 10 dB, with the smoke test passing.
+
+### Checkpoint compatibility
+
+- **Notebook checkpoints** pack all four sub-networks into one file. `convert_kaggle_weights.py`
+  splits them into the per-network layout, validating each with `strict=True`.
+- **Pre-resume checkpoints** have no `*_training_state.pth`. `--continue_train` still loads the
+  weights and warns that the optimizer and temperature restart cold, rather than failing.
+- **Folder names** encode `C_channel`, `lambda_L2`, `lambda_reward` and `select`. Checkpoints
+  written before the `lambda_L2` fix are named `C16_L2_1_re_<...>` and must be renamed to
+  `C16_L2_1.0_re_<...>` to be found.
+- **`torch.load` will default to `weights_only=True`** in a future release. Our files hold
+  tensors and plain scalars, so this should be safe, but it is worth re-testing on the next major
+  torch upgrade.
+
+---
+
 ## 10. Evaluation
 
 `make_figures.py` already produces, per configuration:
@@ -271,6 +363,7 @@ a parameter-count and wall-clock table, and circuit gradient-variance curves.
 
 | Risk | Mitigation |
 |---|---|
+| A quantum dependency silently breaks the classical arm | Shared environment, so re-run both checks after any dependency change — §9a |
 | Barren plateaus | 2 layers, near-identity initialisation, bounded encoding, log gradient variance |
 | Quantum module tanks PSNR | Start as a residual branch, or warm-start classical then swap; separate learning rate |
 | Policy collapses to maximum rate | Track decision entropy; extend the joint stage; tune α |

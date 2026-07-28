@@ -1,18 +1,29 @@
 # Dynamic_JSCC dependencies
-# Original project is from ~2021 (PyTorch). These pinned modern versions
-# are needed because the RTX 4070 (Ada, sm_89) is not supported by the
-# original 2021 PyTorch builds. The code uses only stable APIs and runs
-# fine on modern PyTorch 2.x.
 #
-# NOTE: torch/torchvision must be installed from the CUDA wheel index:
+# The original project is from ~2021. Its PyTorch build predates Ampere and Ada
+# (RTX 3090 sm_86, RTX 4070 sm_89) and will not run on them at all, so modern
+# versions are required rather than merely preferred. The code itself uses only
+# stable APIs and runs unmodified on PyTorch 2.x.
+#
+# torch/torchvision must come from the CUDA wheel index:
 #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+#
+# On Kaggle install nothing from this file except scikit-image and matplotlib:
+# its image already ships a working CUDA build of PyTorch.
 #
 torch==2.5.1
 torchvision==0.20.1
-numpy==1.26.4
 
-# SSIM metric in test_dyna.py
-scikit-image==0.22.0
+# numpy 2 is required, not merely allowed: installing the quantum extras pulls
+# qiskit, which brings numpy 2.x. Pinning numpy<2 here and then installing
+# requirements-quantum.txt silently upgrades it and breaks any package compiled
+# against the numpy 1.x ABI.
+numpy>=2.0
+
+# SSIM metric in test_dyna.py. Must be >=0.24: earlier builds are compiled
+# against the numpy 1.x ABI and fail at import under numpy 2 with
+# "numpy.dtype size changed, may indicate binary incompatibility".
+scikit-image>=0.25
 
 # Figures in make_figures.py
-matplotlib==3.10.9
+matplotlib>=3.8
