@@ -122,6 +122,35 @@ class BaseModel(torch.nn.Module):
                 else:
                     torch.save(net.cpu().state_dict(), save_path)
 
+    def save_training_state(self, epoch, extra=None):
+        """Save everything needed to resume that is not a network weight.
+
+        The optimizer carries Adam's moment estimates; without them a resumed
+        run restarts the optimizer cold and the loss jumps. <extra> holds
+        model-specific scalars such as the Gumbel-Softmax temperature.
+
+        Parameters:
+            epoch (int|str) -- tag used in the filename '%s_training_state.pth'
+            extra (dict)    -- additional picklable values to store
+        """
+        state = dict(extra or {})
+        state['optimizers'] = [optimizer.state_dict() for optimizer in self.optimizers]
+        torch.save(state, os.path.join(self.save_dir, '%s_training_state.pth' % epoch))
+
+    def load_training_state(self, epoch):
+        """Restore optimizer state saved by <save_training_state>.
+
+        Returns the stored dict, or None when no state file exists (for example
+        when resuming from a checkpoint produced before this was added).
+        """
+        load_path = os.path.join(self.save_dir, '%s_training_state.pth' % epoch)
+        if not os.path.exists(load_path):
+            return None
+        state = torch.load(load_path, map_location=str(self.device))
+        for optimizer, optimizer_state in zip(self.optimizers, state.get('optimizers', [])):
+            optimizer.load_state_dict(optimizer_state)
+        return state
+
     def __patch_instance_norm_state_dict(self, state_dict, module, keys, i=0):
         """Fix InstanceNorm checkpoints incompatibility (prior to 0.4)"""
         key = keys[i]
