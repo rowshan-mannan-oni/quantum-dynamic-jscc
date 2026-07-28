@@ -172,6 +172,12 @@ python -m quantum.smoke_test --bench
 
 The paper's tradeoff curves are traced by sweeping `--lambda_reward` (each value is one operating point), for both `hard` and `soft` selection. Because the model is *dynamic*, a single trained model already yields a spread of operating points.
 
+## What differs from the original
+
+[CHANGES.md](CHANGES.md) is a running summary of everything changed since the fork — the bug
+fixes, the added tooling, and the handful of behaviour changes worth knowing about before running
+anything.
+
 ## Attribution
 
 This work builds directly on:
