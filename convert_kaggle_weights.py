@@ -51,7 +51,7 @@ def main():
     # These must match the run that produced the weights; they also determine the
     # folder name, which test_dyna.py rebuilds from the same fields.
     parser.add_argument('--C_channel', type=int, default=16)
-    parser.add_argument('--lambda_L2', type=float, default=1)
+    parser.add_argument('--lambda_L2', type=float, default=1.0)
     parser.add_argument('--lambda_reward', type=float, default=1.5e-3)
     parser.add_argument('--select', type=str, default='hard')
     parser.add_argument('--G_s', type=int, default=4)
