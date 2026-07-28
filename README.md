@@ -172,6 +172,12 @@ python -m quantum.smoke_test --bench
 
 The paper's tradeoff curves are traced by sweeping `--lambda_reward` (each value is one operating point), for both `hard` and `soft` selection. Because the model is *dynamic*, a single trained model already yields a spread of operating points.
 
+## Which command do I run?
+
+[RUNS.md](RUNS.md) is a cookbook: the exact command for each result — training each arm,
+evaluation, figures, parameter sweeps, resuming, and Kaggle — plus the two rules that catch people
+out (evaluation must repeat the training flags, and `--num_workers` on Linux).
+
 ## What differs from the original
 
 [CHANGES.md](CHANGES.md) is a running summary of everything changed since the fork — the bug

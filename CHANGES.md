@@ -10,6 +10,13 @@ Detail lives in the commit messages; this is the map.
 
 ## Quantum work
 
+### 2026-07-29 — Run cookbook, and an SSIM crash it exposed
+
+| | |
+|---|---|
+| 📄 | `RUNS.md` — the command for each result: training each arm, evaluation, figures, sweeps, resuming, Kaggle. |
+| 🐞 | **`test_dyna.py` crashed at the default `--num_test_channel 5`.** The SSIM loop added earlier indexed the original image once per channel realisation, but only one original exists — PSNR broadcasts, the loop did not. Every earlier test happened to pass `--num_test_channel 1`, which hid it. |
+
 ### 2026-07-29 — Swappable sites and the first quantum module `07cf524`
 
 | | |

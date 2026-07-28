@@ -64,9 +64,13 @@ for i, data in enumerate(dataset):
 
     # SSIM on the same int8 images, using the Gaussian-weighted formulation of
     # Wang et al. (as reported in the image compression literature)
-    SSIM = [structural_similarity(origin_int8[j], img_gen_int8[j], channel_axis=2,
-                                  data_range=255, gaussian_weights=True, sigma=1.5,
-                                  use_sample_covariance=False)
+    # The input is repeated num_test_channel times to draw several channel
+    # realisations of one image, so origin_int8 holds a single image while
+    # img_gen_int8 holds one reconstruction per realisation. PSNR above relies
+    # on numpy broadcasting for this; index the original explicitly here.
+    SSIM = [structural_similarity(origin_int8[j % origin_int8.shape[0]], img_gen_int8[j],
+                                  channel_axis=2, data_range=255, gaussian_weights=True,
+                                  sigma=1.5, use_sample_covariance=False)
             for j in range(img_gen_int8.shape[0])]
     SSIM_list.append(np.mean(SSIM))
 
