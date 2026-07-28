@@ -13,3 +13,6 @@ numpy==1.26.4
 
 # SSIM metric in test_dyna.py
 scikit-image==0.22.0
+
+# Figures in make_figures.py
+matplotlib==3.10.9

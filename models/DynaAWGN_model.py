@@ -50,6 +50,7 @@ class DynaAWGNModel(BaseModel):
 
         self.opt = opt
         self.temp = opt.temp_init if opt.isTrain else 5
+        self.forced_active = None    # set to an int in [0, G_s] to pin the rate
 
     def name(self):
         return 'DynaAWGN_Model'
@@ -76,6 +77,16 @@ class DynaAWGNModel(BaseModel):
 
         # Generate decision mask
         self.hard_mask, self.soft_mask, prob = self.netP(z, self.snr, self.temp)
+
+        # Optionally override the policy to run at a fixed rate. Used to measure
+        # the PSNR attainable at each rate; None (the default) leaves the
+        # adaptive behaviour untouched.
+        if self.forced_active is not None:
+            fixed = torch.zeros(self.real_A.shape[0], self.opt.G_s, device=self.device)
+            fixed[:, :self.forced_active] = 1.0
+            self.hard_mask = fixed
+            self.soft_mask = fixed
+
         self.count = self.hard_mask.sum(-1)
 
         # Normalize each channel

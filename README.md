@@ -102,6 +102,49 @@ python test_dyna.py --gpu_ids '0' --select 'hard' --SNR_MIN 0 --SNR_MAX 20 \
 
 Reports mean PSNR and mean transmitted-channel count. Requires a trained checkpoint.
 
+### Figures
+
+`test_dyna.py` only prints scalars. To produce the paper's figures from a trained checkpoint:
+
+```bash
+python make_figures.py --gpu_ids 0 --select hard --lambda_reward 1.5e-3 --num_test 10000
+```
+
+This writes to `./figures/` (override with `--results_dir`):
+
+| Output | Contents |
+|---|---|
+| `fig4_rate_psnr_vs_snr.png` | Average rate (CPP) and PSNR against SNR |
+| `fig5_attainable_psnr.png` | PSNR at each fixed rate, with adaptive points overlaid |
+| `fig6_per_class.png` | Per-class rate and PSNR at one SNR |
+| `reconstructions.png` | Sample reconstructions at several SNRs |
+| `fig4_data.csv`, `fig5_data.csv`, `fig6_data.csv` | The numbers behind each figure |
+
+The fixed-rate curves in `fig5` come from `DynaAWGNModel.forced_active`, which pins the rate
+instead of letting the policy network choose.
+
+### Using existing weights
+
+`convert_kaggle_weights.py` converts a single-file checkpoint that packs all four
+sub-networks as `{'SE', 'CE', 'G', 'P'}` into the per-network layout `base_model.py` expects.
+Each state dict is validated with `strict=True` before anything is written:
+
+```bash
+python convert_kaggle_weights.py --src Weight/final.pth --lambda_reward 1.5e-3
+```
+
+Note that `test_dyna.py` and `make_figures.py` locate a checkpoint by *rebuilding the folder
+name* from `--C_channel`, `--lambda_L2`, `--lambda_reward` and `--select`, so pass the same
+values to the converter and to whatever consumes its output.
+
+### Running on Kaggle
+
+`Kaggle_Figures.ipynb` clones this repository and runs the scripts above, so the figures always
+come from the latest commit rather than a copy of the code pasted into a notebook. It needs
+Internet enabled (to clone) and your checkpoint attached as a Kaggle Dataset — weights are not
+stored in the repository. Do **not** install the pinned `torch` from `requirements.txt` on
+Kaggle; its image already ships a working CUDA build.
+
 ### Reproducing the rate–distortion curves
 
 The paper's tradeoff curves are traced by sweeping `--lambda_reward` (each value is one operating point), for both `hard` and `soft` selection. Because the model is *dynamic*, a single trained model already yields a spread of operating points.

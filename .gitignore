@@ -11,6 +11,10 @@ loss_log.txt
 Weight/
 Dynamic_JSCC_Kaggle.ipynb
 
+# Generated figures (reproducible via make_figures.py)
+figures/
+figures_*/
+
 # Python
 __pycache__/
 *.py[cod]
