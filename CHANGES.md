@@ -10,6 +10,12 @@ Detail lives in the commit messages; this is the map.
 
 ## Quantum work
 
+### 2026-07-29 — Dead `Normalize` class removed
+
+| | |
+|---|---|
+| 🐞 | **`networks.Normalize` called `np.sqrt` in a file that never imports numpy**, so any use of it raised `NameError`. Nothing instantiated it — inherited unused from the fork — which is why it never surfaced. Deleted rather than fixed: the model already power-normalises inline in `DynaAWGN_model.forward`, per channel over the last two dims, where the dead class averaged over all channels at once. |
+
 ### 2026-07-29 — The angle encoder saturated, so both site modules now normalise their input
 
 | | |

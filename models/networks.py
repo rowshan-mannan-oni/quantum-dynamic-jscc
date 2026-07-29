@@ -166,12 +166,6 @@ class Flatten(nn.Module):
         return x.view(N, -1)  # "flatten" the C * H * W values into a single vector per image
 
 
-class Normalize(nn.Module):
-    def forward(self, x, power):
-        N = x.shape[0]
-        pwr = torch.mean(x**2, (1, 2, 3), True)
-        return np.sqrt(power) * x / torch.sqrt(pwr)
-
 def print_network(net):
     if isinstance(net, list):
         net = net[0]
