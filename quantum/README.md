@@ -70,6 +70,7 @@ Kaggle already ships a CUDA build of PyTorch, so install the packages above but 
 ```bash
 python -m quantum.smoke_test            # circuit runs and gradients reach it
 python -m quantum.smoke_test --bench    # time each candidate site
+python -m quantum.smoke_test --gpu 1    # on a specific card, matching --gpu_ids
 ```
 
 A successful import proves very little. What matters is that gradients reach the circuit

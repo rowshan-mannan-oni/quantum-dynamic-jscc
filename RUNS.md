@@ -51,6 +51,7 @@ different schedule overwrites the previous result. Change `--seed` or use a fres
 # GPU visible, and the quantum stack actually backpropagates
 python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 python -m quantum.smoke_test            # add --bench to time each site on your GPU
+                                        # --gpu N selects a card, matching --gpu_ids
 
 # the whole pipeline, 2 short epochs, into a throwaway folder
 python train_dyna.py --gpu_ids 0 --lambda_reward 9.9e-3 \
@@ -300,7 +301,7 @@ working CUDA build.
 
 | | |
 |---|---|
-| `--gpu_ids 0` / `-1` | GPU 0 / CPU |
+| `--gpu_ids N` / `-1` | train/evaluate on GPU `N` / CPU. `quantum.smoke_test` takes `--gpu N` for the same choice |
 | `--select hard` \| `soft` | mask selection |
 | `--lambda_reward` | rate penalty; **sweep this** for the tradeoff curve |
 | `--SNR_MIN 0 --SNR_MAX 20` | training SNR range (dB) |

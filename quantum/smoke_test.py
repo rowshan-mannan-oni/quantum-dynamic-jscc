@@ -89,11 +89,21 @@ def main():
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--bench', action='store_true', help='also time each candidate site')
     parser.add_argument('--cpu', action='store_true', help='force CPU')
+    parser.add_argument('--gpu', type=int, default=0, help='which GPU to use, matching --gpu_ids in the training scripts')
     args = parser.parse_args()
 
-    device = torch.device('cpu' if args.cpu or not torch.cuda.is_available() else 'cuda')
-    if device.type == 'cpu':
+    if args.cpu or not torch.cuda.is_available():
+        device = torch.device('cpu')
         print('WARNING: running on CPU. Simulation is far slower there.\n')
+    else:
+        count = torch.cuda.device_count()
+        if not 0 <= args.gpu < count:
+            raise SystemExit('--gpu %d does not exist: this machine has %d GPU(s), so valid '
+                             'ids are 0..%d' % (args.gpu, count, count - 1))
+        device = torch.device('cuda', args.gpu)
+        # bench() calls torch.cuda.synchronize(), which acts on the current
+        # device, so timings would be taken against the wrong GPU without this.
+        torch.cuda.set_device(device)
 
     check(device)
     if args.bench:
