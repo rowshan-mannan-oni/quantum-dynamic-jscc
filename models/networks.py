@@ -14,7 +14,11 @@ class MatchedBottleneck(nn.Module):
     Mirrors quantum.layers.HybridVQC exactly, with the circuit replaced by a
     classical map of the same width:
 
-        Linear(in -> w) -> tanh*pi -> Linear(w -> w) -> tanh -> Linear(w -> out)
+        norm -> Linear(in -> w) -> tanh*pi -> Linear(w -> w) -> tanh -> Linear(w -> out)
+
+    The input normalisation mirrors the quantum module's for the reason given
+    there: without it the tanh saturates and the module stops responding to its
+    input. Both arms carry it, so the control stays a control.
 
     A quantum module is far smaller than the layer it replaces (about 2.2k
     against 37k at the projection site), so comparing it only against the
@@ -28,12 +32,13 @@ class MatchedBottleneck(nn.Module):
 
     def __init__(self, in_features, out_features, width=8):
         super().__init__()
+        self.norm = nn.BatchNorm1d(in_features, affine=False)
         self.pre = nn.Linear(in_features, width)
         self.mid = nn.Linear(width, width)
         self.post = nn.Linear(width, out_features)
 
     def forward(self, x):
-        angles = torch.tanh(self.pre(x)) * math.pi
+        angles = torch.tanh(self.pre(self.norm(x))) * math.pi
         return self.post(torch.tanh(self.mid(angles)))
 
 

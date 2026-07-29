@@ -201,6 +201,15 @@ python train_dyna.py --gpu_ids 0 --num_workers 4 \
 
 → `…_hard_mpolicy-q8_s0/` ~3.4 h · `…_hard_qpolicy-q8l2_s0/` ~5.3 h
 
+> **Checkpoints from before 2026-07-29 do not load here.** The first quantum run at this
+> site collapsed to a constant rate — 7 groups, CPP 0.438, for every image at every SNR —
+> because the angle encoder saturated: 82% of its units sat at `|tanh| > 0.99` at 20 dB,
+> and the circuit returned the same vector regardless of input. Both site modules now
+> normalise their input, which adds `norm.running_mean` / `norm.running_var` to `netP` and
+> makes older `qpolicy` / `mpolicy` checkpoints fail with *Missing key(s) in state_dict*.
+> Retrain rather than trying to load them. Watch `G_reward` in `loss_log.txt`: a value
+> that is constant to five decimals across batches means the policy has stopped adapting.
+
 ### Site B — channel encoder projection ⬜ not yet implemented
 
 Replaces `Conv3×3(256→16)`, whose output **is** the transmitted signal. The headline site.

@@ -78,7 +78,7 @@ class VariationalCircuit(tq.QuantumModule):
 class HybridVQC(nn.Module):
     """Classical -> quantum -> classical sandwich.
 
-        in_features -> Linear -> bounded angles -> VQC -> measure -> Linear -> out_features
+        in_features -> norm -> Linear -> bounded angles -> VQC -> measure -> Linear -> out_features
 
     A circuit cannot absorb or emit a high-dimensional vector: encoding costs one
     angle per qubit and measurement yields one expectation per qubit. The linear
@@ -86,12 +86,20 @@ class HybridVQC(nn.Module):
     real width is far larger than any tractable qubit count.
 
     Angles are squashed with tanh and scaled to +/-pi so the encoding cannot
-    saturate or wrap, which otherwise flattens gradients.
+    wrap. tanh alone does not stop it saturating, though: fed the policy site's
+    input, where one feature is an SNR in dB and the rest are pooled activations
+    two orders of magnitude smaller, 82% of encoder units pinned at |tanh| > 0.99
+    and the circuit emitted the same vector for every image. Hence the input
+    normalisation, which is per-feature so a single outsized feature is rescaled
+    rather than left to dominate, and which the classical layers these modules
+    replace already had. It is affine-free, so it adds running statistics but no
+    parameters and leaves the matched control's budget comparable.
     """
 
     def __init__(self, in_features, out_features, n_qubits=8, n_layers=2,
                  init_std=0.01):
         super().__init__()
+        self.norm = nn.BatchNorm1d(in_features, affine=False)
         self.pre = nn.Linear(in_features, n_qubits)
         self.circuit = VariationalCircuit(n_qubits, n_layers, init_std)
         self.post = nn.Linear(n_qubits, out_features)
@@ -100,7 +108,7 @@ class HybridVQC(nn.Module):
 
     def forward(self, x):
         """x: (B, in_features) -> (B, out_features)."""
-        angles = torch.tanh(self.pre(x)) * math.pi
+        angles = torch.tanh(self.pre(self.norm(x))) * math.pi
         return self.post(self.circuit(angles))
 
     def n_quantum_parameters(self):

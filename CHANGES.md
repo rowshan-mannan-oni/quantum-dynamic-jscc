@@ -10,6 +10,21 @@ Detail lives in the commit messages; this is the map.
 
 ## Quantum work
 
+### 2026-07-29 — The angle encoder saturated, so both site modules now normalise their input
+
+| | |
+|---|---|
+| 🐞 | **`HybridVQC` and `MatchedBottleneck` fed their input straight into `tanh(Linear(x)) * pi`.** At the policy site that input is 256 pooled activations averaging 0.57 alongside one SNR feature spanning 0–20, so the SNR term dominated the scale: in the trained `qpolicy-q8l2_s0` checkpoint 56% of encoder units were saturated at 0 dB and **82% at 20 dB**, the circuit's output varied by 5e-3 across 512 different images, and the winning logit led by ~20 against Gumbel noise of std ≈1.3. The policy could not respond to anything. |
+| ⚙️ | Both modules now start with `BatchNorm1d(in_features, affine=False)` — per-feature, so the one outsized feature is rescaled instead of dominating, and parameter-free, so the site's budgets (quantum 2,141 · matched 2,181) are unchanged. Applied to **both** arms: fixing only the quantum one would have stopped the control being a control. |
+| ⚠️ | **`qpolicy` and `mpolicy` checkpoints from before this do not load** — `netP` gains `norm.running_mean` / `norm.running_var`, so loading fails with *Missing key(s) in state_dict*. `netSE`, `netCE` and `netG` are unaffected. Retrain the affected arms. |
+
+### 2026-07-29 — `compare_arms.py`, and the first quantum-vs-classical comparison
+
+| | |
+|---|---|
+| ✨ | **`compare_arms.py`** overlays the sweeps of two or more arms from the csv files `make_figures.py` leaves behind, writing `comparison_rate_psnr.png` and `comparison_data.csv`. Rate and PSNR get a panel each rather than a twin axis. It reports any arm whose policy has collapsed to a constant rate, and pulls in the first arm's fixed-rate curve at that rate so the PSNR panel is like-for-like. |
+| ⚠️ | **The `qpolicy-q8l2_s0` policy has collapsed:** it selects exactly 7 groups (CPP 0.438) for every image at every SNR, so it is a fixed-rate codec, not an adaptive one. The classical baseline moves 0.492 → 0.254 over the same sweep. |
+
 ### 2026-07-29 — `opt.txt` records the command that trained the run
 
 | | |
