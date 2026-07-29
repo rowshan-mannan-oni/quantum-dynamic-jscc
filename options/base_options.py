@@ -1,6 +1,10 @@
 import argparse
 import os
 import random
+import shlex
+import subprocess
+import sys
+from datetime import datetime
 
 import numpy as np
 import torch
@@ -12,6 +16,19 @@ def parse_sites(value):
     if not value or value == 'none':
         return []
     return [site.strip() for site in value.split(',') if site.strip()]
+
+
+def command_line():
+    """The command that launched this run, quoted so it can be pasted back.
+
+    Worth recording because the folder name only carries the flags <run_name>
+    uses: epochs, learning rate and batch size leave no trace on disk, and a
+    re-run overwrites the only copy of them.
+    """
+    args = ['python'] + sys.argv
+    if os.name == 'nt':
+        return subprocess.list2cmdline(args)
+    return ' '.join(shlex.quote(arg) for arg in args)
 
 
 def run_name(opt):
@@ -158,8 +175,14 @@ class BaseOptions():
 
         Called once the checkpoint folder exists. With several arms differing
         only by a flag, the folder name alone is a thin provenance record.
+
+        The command goes in first because evaluation takes no checkpoint path:
+        it rebuilds the folder name from the flags, so the flags have to be
+        repeated, and this is where to read them back from.
         """
         with open(os.path.join(opt.checkpoints_dir, opt.name, 'opt.txt'), 'w') as fh:
+            fh.write('Started: %s\n' % datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+            fh.write('Command: %s\n\n' % command_line())
             fh.write(opt._options_text + '\n')
 
     def validate_sites(self, opt):

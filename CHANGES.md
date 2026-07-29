@@ -10,6 +10,13 @@ Detail lives in the commit messages; this is the map.
 
 ## Quantum work
 
+### 2026-07-29 — `opt.txt` records the command that trained the run
+
+| | |
+|---|---|
+| ✨ | **`opt.txt` now opens with the start time and the exact command line**, quoted so it pastes back (`subprocess.list2cmdline` on Windows, `shlex.quote` elsewhere). Since evaluation takes no checkpoint path and rebuilds the folder name from the flags, this is where to read those flags back from. |
+| 📄 | `RUNS.md` rule 1 points at `opt.txt` for recovering the flags, and warns that training-only ones must be dropped for `make_figures.py`. |
+
 ### 2026-07-29 — Full argument reference, and a silent-control bug it exposed
 
 | | |

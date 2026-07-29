@@ -28,6 +28,10 @@ python make_figures.py --lambda_reward 2e-3 --seed 0 --quantum_site policy   # s
 
 Get one wrong and you get "file not found", not the wrong model — the name is the guard.
 
+To recover the flags later, read `opt.txt` in the run folder: its first lines are the start time
+and the exact command that trained it. Copy the flags across, dropping the training-only ones
+(`--n_epochs`, `--continue_train`, …) — `make_figures.py` rejects arguments it does not define.
+
 **2. `--num_workers` defaults to 0**, because the scripts run at module scope with no
 `__main__` guard and Windows cannot spawn dataloader workers into that. On Linux, **use 2–4** or
 data loading becomes the bottleneck.
