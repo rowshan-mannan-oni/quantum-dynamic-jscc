@@ -37,6 +37,14 @@ class MatchedBottleneck(nn.Module):
         return self.post(torch.tanh(self.mid(angles)))
 
 
+# Sites that actually have a build_swappable hook in this file. Extend it when
+# adding one. Without it a site that is planned but not yet wired up would
+# silently build the classical module while the checkpoint folder is named as
+# though it were an arm, which is the kind of thing that is only noticed after
+# the results are written up.
+SWAPPABLE_SITES = ('policy',)
+
+
 def _sites(value):
     if not value or value == 'none':
         return []
@@ -52,6 +60,9 @@ def build_swappable(opt, site, classical, in_features, out_features):
     The import of `quantum` is local: deleting that package leaves classical and
     matched runs working, and only fails runs that asked for a circuit.
     """
+    assert site in SWAPPABLE_SITES, \
+        f'{site!r} has a hook but is missing from SWAPPABLE_SITES'
+
     if opt is None:
         return classical()
 

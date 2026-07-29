@@ -173,6 +173,16 @@ class BaseOptions():
                 'matched control exists to isolate the circuit, so a run cannot '
                 'be both arms at once.')
 
+        # Both arms need a hook in the model. Checking the matched arm matters
+        # just as much: without this, a site that is planned but not yet wired
+        # up builds the classical module while the folder is named as though it
+        # were the control.
+        from models.networks import SWAPPABLE_SITES
+        unhooked = [s for s in quantum + matched if s not in SWAPPABLE_SITES]
+        if unhooked:
+            raise SystemExit('no swappable hook for site(s) %s; implemented: %s'
+                             % (unhooked, list(SWAPPABLE_SITES)))
+
         if not quantum:
             return
 

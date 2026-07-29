@@ -10,6 +10,14 @@ Detail lives in the commit messages; this is the map.
 
 ## Quantum work
 
+### 2026-07-29 — Full argument reference, and a silent-control bug it exposed
+
+| | |
+|---|---|
+| 📄 | `RUNS.md` rewritten: every training and inference argument documented, and a section per site with the commands for each arm. Sites not yet built are marked in their headings. |
+| 🐞 | **`--matched_site <unbuilt site>` trained a plain classical model** into a folder named as though it were the control. Only `--quantum_site` was validated. Both are now checked against the sites that actually have a hook, and `build_swappable` asserts the two lists agree. |
+| 📄 | Documented that `--ndf`, `--max_dataset_size` and `--phase` are inherited from the CycleGAN codebase and never read. |
+
 ### 2026-07-29 — Best-checkpoint tracking
 
 | | |
