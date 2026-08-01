@@ -26,7 +26,7 @@ class DynaAWGNModel(BaseModel):
                                         init_gain=opt.init_gain, gpu_ids=self.gpu_ids)
         self.netCE = networks.define_CE(ngf=opt.ngf, max_ngf=opt.max_ngf, n_downsample=opt.n_downsample, C_channel=opt.C_channel,
                                         norm=opt.norm, init_type=opt.init_type,
-                                        init_gain=opt.init_gain, gpu_ids=self.gpu_ids)
+                                        init_gain=opt.init_gain, gpu_ids=self.gpu_ids, opt=opt)
 
         self.netG = networks.define_dynaG(output_nc=opt.output_nc, ngf=opt.ngf, max_ngf=opt.max_ngf,
                                           n_downsample=opt.n_downsample, C_channel=opt.C_channel,

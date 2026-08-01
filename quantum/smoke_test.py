@@ -9,15 +9,24 @@ Importing TorchQuantum successfully is not enough. What matters is that a
 batched circuit runs on the GPU and that gradients reach the circuit
 parameters, because a silent failure there would look like a model that simply
 does not learn.
+
+Two levels of check run by default. The first exercises `HybridVQC` on its own.
+The second builds every registered site through the same `build_swappable` hook
+training uses, at the shapes and batch sizes a real run hits, for all three
+arms - so it catches a site that is registered but mis-wired, an arm whose
+shapes do not line up, and a parameter budget that has drifted away from its
+control. Skip it with --no-sites if `models/` is unavailable.
 """
 import argparse
 import time
+from types import SimpleNamespace
 
 import torch
 
 from quantum.layers import HybridVQC, VariationalCircuit
 
 ITERS_PER_EPOCH = 390        # 50000 CIFAR-10 images / batch 128
+BATCH = 128                  # --batch_size default, so the checks see real sizes
 
 
 def check(device):
@@ -54,6 +63,146 @@ def check(device):
     print('\nSMOKE TEST PASSED')
 
 
+def build_arm(site, arm, device, n_qubits, vqc_layers):
+    """Build the sub-network containing <site>, for one arm, through the real hook.
+
+    Goes through `define_*` rather than constructing the module directly, so
+    what is checked is the path training uses: the hook, the wrapper it applies,
+    the site factory, and `init_net`'s re-initialisation of the linear layers on
+    the way past.
+
+    Returns the network, the swapped module inside it, a callable running the
+    forward pass, and the output shape expected of it.
+
+    The swapped module is returned separately because it is what the parameter
+    budget is about. Counting the whole network instead would bury a 2.2k module
+    inside the channel encoder's 2.9M and report every arm as identical, which
+    is precisely the drift the count is supposed to catch.
+
+    Add a branch when adding a site. The unknown-site raise at the end is
+    deliberate: a site that registers itself but has no entry here would
+    otherwise be silently untested.
+    """
+    from models import networks
+
+    opt = SimpleNamespace(quantum_site='none', matched_site='none',
+                          n_qubits=n_qubits, vqc_layers=vqc_layers)
+    if arm == 'quantum':
+        opt.quantum_site = site
+    elif arm == 'matched':
+        opt.matched_site = site
+
+    gpu_ids = [device.index or 0] if device.type == 'cuda' else []
+    common = dict(ngf=64, max_ngf=256, n_downsample=2, gpu_ids=gpu_ids, opt=opt)
+
+    def unwrap(net):
+        return net.module if isinstance(net, torch.nn.DataParallel) else net
+
+    if site == 'policy':
+        net = networks.define_dynaP(N_output=5, **common)
+        # (hard_mask, soft_mask, logits) - the logits are what the site produces
+        return (net, unwrap(net).model_gate,
+                lambda z, snr: net(z, snr, 5)[2], (BATCH, 5))
+    if site == 'projection':
+        net = networks.define_CE(C_channel=16, norm='batch', **common)
+        return net, unwrap(net).projection, net, (BATCH, 16, 8, 8)
+
+    raise KeyError(f'site {site!r} is registered but has no entry in build_arm, '
+                   f'so it would go untested')
+
+
+def check_wrapper(device):
+    """PerPosition must be exactly a 1x1 convolution when given a linear map.
+
+    The wrapper folds (N,C,H,W) into (N*H*W, C) and back. Getting the permute
+    and reshape the wrong way round transposes positions against channels
+    without changing any shape, so nothing raises - the model simply trains on
+    scrambled spatial structure and reports a worse number. Pinning it against
+    Conv2d(1x1), which is the same map by definition, is what turns that into a
+    failure instead of a quiet result.
+    """
+    import torch.nn as nn
+    from models.networks import PerPosition
+
+    c_in, c_out = 12, 5
+    linear = nn.Linear(c_in, c_out).to(device)
+    conv = nn.Conv2d(c_in, c_out, kernel_size=1).to(device)
+    with torch.no_grad():
+        conv.weight.copy_(linear.weight.view(c_out, c_in, 1, 1))
+        conv.bias.copy_(linear.bias)
+
+    x = torch.randn(4, c_in, 8, 6, device=device)      # H != W catches a transpose
+    got, want = PerPosition(linear)(x), conv(x)
+
+    assert got.shape == want.shape, f'PerPosition gave {got.shape}, 1x1 conv {want.shape}'
+    assert torch.allclose(got, want, atol=1e-5), \
+        f'PerPosition disagrees with a 1x1 conv by {(got - want).abs().max():.3g}'
+    print(f'\nPerPosition == Conv2d(1x1)   max diff {(got - want).abs().max():.2g}'
+          f'   on {tuple(x.shape)}')
+
+
+def check_sites(device, n_qubits, vqc_layers):
+    """Every registered site, every arm: shapes line up and gradients arrive."""
+    import quantum
+    from models.networks import SWAPPABLE_SITES
+
+    print(f'\n{"=" * 78}\nsites, through the real build_swappable hook '
+          f'(q={n_qubits}, L={vqc_layers}, batch={BATCH})\n{"=" * 78}')
+
+    registered = quantum.available_sites()
+    missing = [s for s in registered if s not in SWAPPABLE_SITES]
+    assert not missing, f'registered with no model hook: {missing}'
+
+    for site in registered:
+        print(f'\n{site}')
+        print(f'  {"arm":<10}{"module params":>14}{"circuit":>9}  '
+              f'{"output":<18}{"circuit grad":>14}')
+        counts = {}
+        for arm in ('classical', 'matched', 'quantum'):
+            net, module, forward, expected = build_arm(site, arm, device,
+                                                       n_qubits, vqc_layers)
+
+            z = torch.randn(BATCH, 256, 8, 8, device=device)
+            snr = torch.rand(BATCH, 1, device=device) * 20
+            out = forward(z, snr)
+            out.pow(2).mean().backward()
+
+            assert tuple(out.shape) == expected, \
+                f'{site}/{arm} produced {tuple(out.shape)}, expected {expected}'
+
+            total = sum(p.numel() for p in module.parameters())
+            counts[arm] = total
+
+            circuit = [p for n, p in module.named_parameters() if 'circuit.' in n]
+            if arm == 'quantum':
+                assert circuit, f'{site}/quantum built no circuit parameters'
+                grads = [p.grad for p in circuit if p.grad is not None]
+                assert len(grads) == len(circuit), \
+                    f'{site}/quantum: only {len(grads)}/{len(circuit)} angles got a gradient'
+                norm = torch.stack([g.norm() for g in grads]).norm().item()
+                assert norm > 0, \
+                    f'{site}/quantum: gradient reached the angles but is exactly zero'
+                grad = f'{norm:.3g}'
+            else:
+                grad = '-'
+
+            print(f'  {arm:<10}{total:>14,}{len(circuit):>9}  '
+                  f'{str(tuple(out.shape)):<18}{grad:>14}')
+
+        # The control exists to answer "you just shrank the layer", which it
+        # only does if it is actually the same size as the circuit it stands in
+        # for. 10% is loose enough for the arms' differing internals and tight
+        # enough that a real drift fails here rather than in review.
+        q, m = counts['quantum'], counts['matched']
+        skew = abs(q - m) / max(q, m)
+        assert skew < 0.10, (f'{site}: matched control is {skew:.0%} away from the '
+                             f'quantum arm ({m:,} vs {q:,}); it is no longer a control')
+        print(f'  matched/quantum differ by {skew:.2%}, '
+              f'both {counts["classical"] / q:.1f}x smaller than classical')
+
+    print('\nSITE CHECKS PASSED')
+
+
 def bench(device):
     """Time a forward+backward at the batch size each site would use."""
     def timed(bsz, n_qubits, n_layers, iters=5):
@@ -88,6 +237,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--bench', action='store_true', help='also time each candidate site')
+    parser.add_argument('--no-sites', dest='sites', action='store_false',
+                        help='skip the per-site checks, which need the models package')
+    parser.add_argument('--n_qubits', type=int, default=8, help='circuit width to check the sites at')
+    parser.add_argument('--vqc_layers', type=int, default=2, help='circuit depth to check the sites at')
     parser.add_argument('--cpu', action='store_true', help='force CPU')
     parser.add_argument('--gpu', type=int, default=0, help='which GPU to use, matching --gpu_ids in the training scripts')
     args = parser.parse_args()
@@ -106,6 +259,9 @@ def main():
         torch.cuda.set_device(device)
 
     check(device)
+    if args.sites:
+        check_wrapper(device)
+        check_sites(device, args.n_qubits, args.vqc_layers)
     if args.bench:
         if device.type != 'cuda':
             print('\nSkipping benchmark: needs a GPU.')

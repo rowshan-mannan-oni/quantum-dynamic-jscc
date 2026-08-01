@@ -10,6 +10,23 @@ Detail lives in the commit messages; this is the map.
 
 ## Quantum work
 
+### 2026-08-02 — Site B: the channel-encoder projection
+
+| | |
+|---|---|
+| ✨ | **`--quantum_site projection` / `--matched_site projection`** replace `netCE.projection`, the `Conv3×3(256→16)` whose output *is* the transmitted latent. This is the site with the strongest claim: every other one shapes or selects what a classical layer transmits, this one produces the symbols. 36,880 params → **2,232 quantum · 2,272 matched**. Measured on an RTX 4070 Laptop at 1.1 min/epoch against 0.6 matched and 0.5 classical, so ~7.3 h for the full 400. |
+| ✨ | **`PerPosition`** folds the 8×8 grid into the batch, so all 64 positions run as one circuit evaluation at batch 8192 rather than a 64-step loop — nearly free, because 8-qubit statevector simulation is bound by kernel launches, not arithmetic. It is applied by `build_swappable` **outside** both arms, so the circuit and its control share one implementation of the fold instead of each carrying a copy that could drift apart. |
+| ⚠️ | **Both swapped arms are 1×1 where the classical reference is 3×3.** A circuit takes one vector per shot, so the swap also gives up the convolution's neighbourhood. It applies equally to quantum and matched, so *that* comparison stays clean — but part of any gap against the unmodified reference is the lost receptive field rather than the circuit, and it has to be reported next to the parameter count. |
+| ⚠️ | **No SNR feature is fed to this site**, unlike `policy`. The `Conv3×3` it replaces never received one — channel state arrives through `mod1`/`mod2` upstream — so feeding it here would hand the arm an input the original did not have. This departs from plan open-decision 3, deliberately. |
+| 📄 | Unlike site A, the projection lives in `netCE`, which the fine-tune stage does **not** freeze, so a circuit here trains for all 400 epochs instead of stopping at 300. |
+
+### 2026-08-02 — `quantum.smoke_test` now checks the sites, not just the install
+
+| | |
+|---|---|
+| ✨ | **Every registered site is built through the same `build_swappable` hook training uses**, for all three arms, at the real batch and shapes: output shape unchanged, gradients reaching the circuit angles, and the matched control still within 10% of the arm it controls for. Previously the test exercised `HybridVQC` in isolation, which would not have caught a mis-wired hook. A site that registers itself but has no entry in the check fails the run rather than going quietly untested. |
+| ✨ | **`PerPosition` is pinned against `Conv2d(1×1)`,** which is the same map by definition. Getting its permute and reshape the wrong way round transposes positions against channels *without changing any shape*, so nothing would raise — the model would simply train on scrambled spatial structure and report a worse number, which at this site would read as "the circuit underperforms". |
+
 ### 2026-07-29 — `Dynamic_JSCC_Kaggle.ipynb` rewritten to train an arm from the repository
 
 | | |

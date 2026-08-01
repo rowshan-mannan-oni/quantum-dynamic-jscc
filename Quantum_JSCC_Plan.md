@@ -23,9 +23,10 @@ baseline.
 | Kaggle notebooks (train and/or figures, driven from this repo) | **done** |
 | TorchQuantum install validated: GPU forward **and backward**, per-site benchmark | **done** — see `quantum/README.md` |
 | `quantum/` scaffold: circuit primitives, site registry, `--quantum_site` | **done** |
-| Site modules in `quantum/modules.py` | **pending** — next step |
-| Integration hooks in `models/` | **pending** |
-| Comparison runs | **pending** |
+| Site modules in `quantum/modules.py` | **A and B done** — policy, projection |
+| Integration hooks in `models/` | **A and B done**, covered by `smoke_test`'s per-site checks |
+| Comparison runs | **A: one seed, indicative** — quantum policy at parity with classical (§5's matched control and ≥3 seeds still outstanding) |
+| Site B first runs | **pending** — next step |
 
 ---
 
@@ -102,8 +103,12 @@ roughly 6.5 h for 400 epochs against 3.4 h classical, rather than the multi-day 
 position-by-position loop would require.
 
 **Exploration order:** A (cheap end-to-end proof that autograd survives the Gumbel-Softmax path)
-→ D → **B (the headline)** → C → F. E is deferred: it is the most novel option but it changes the
+→ **B (the headline)** → D → C → F. E is deferred: it is the most novel option but it changes the
 task rather than the architecture, which muddies the comparison; better as follow-on work.
+
+> Open decision 1 — D or straight to B after A — was **resolved in favour of B** on 2026-08-02.
+> A had already shown the plumbing works end to end, so the cheap in-path rehearsal D was meant
+> to provide bought little, and B is the site the contribution rests on.
 
 Sites A–D and F together span the whole pipeline — input, transmit, decision, adaptation,
 receive — which is what makes the map in §1 a complete answer rather than three data points.
@@ -432,4 +437,5 @@ a parameter-count and wall-clock table, and circuit gradient-variance curves.
 
 ---
 
-*Infrastructure and environment are in place; §13.3 is the next step.*
+*Sites A and B are implemented, hooked up and covered by `python -m quantum.smoke_test`.
+Site A has one indicative comparison run; §13.5 for site B is the next step.*

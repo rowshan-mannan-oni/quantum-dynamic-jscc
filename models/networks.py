@@ -42,12 +42,47 @@ class MatchedBottleneck(nn.Module):
         return self.post(torch.tanh(self.mid(angles)))
 
 
+class PerPosition(nn.Module):
+    """Apply a module that maps vectors independently at every spatial position.
+
+        (N, C_in, H, W) -> fold to (N*H*W, C_in) -> module -> (N, C_out, H, W)
+
+    A circuit consumes one vector per shot, so a site that replaces a
+    convolution has to decide what the circuit sees. Folding the spatial
+    positions into the batch dimension is what makes that affordable: at 8
+    qubits a batch of 8192 costs about what 128 does, because statevector
+    simulation at this width is bound by kernel launches rather than arithmetic,
+    so all 64 positions of an 8x8 map run in one pass instead of a loop.
+
+    This wrapper is applied by `build_swappable`, outside both arms, so the
+    quantum module and its matched control share one implementation of the fold
+    rather than each carrying a copy that could drift apart.
+
+    Note the receptive field this gives up: the classical projection is a 3x3
+    convolution and sees its neighbours, while anything wrapped here is 1x1 and
+    sees only its own position. That difference applies equally to both swapped
+    arms, so it does not confound quantum against matched - but it is part of
+    any gap against the unmodified classical reference, and belongs in the
+    write-up alongside the parameter count.
+    """
+
+    def __init__(self, module):
+        super().__init__()
+        self.module = module
+
+    def forward(self, x):
+        N, C, H, W = x.shape
+        folded = x.permute(0, 2, 3, 1).reshape(N * H * W, C)
+        out = self.module(folded)
+        return out.view(N, H, W, -1).permute(0, 3, 1, 2).contiguous()
+
+
 # Sites that actually have a build_swappable hook in this file. Extend it when
 # adding one. Without it a site that is planned but not yet wired up would
 # silently build the classical module while the checkpoint folder is named as
 # though it were an arm, which is the kind of thing that is only noticed after
 # the results are written up.
-SWAPPABLE_SITES = ('policy',)
+SWAPPABLE_SITES = ('policy', 'projection')
 
 
 def _sites(value):
@@ -56,11 +91,17 @@ def _sites(value):
     return [s.strip() for s in value.split(',') if s.strip()]
 
 
-def build_swappable(opt, site, classical, in_features, out_features):
+def build_swappable(opt, site, classical, in_features, out_features, wrap=None):
     """Return the module to use at <site>: quantum, matched, or classical.
 
     <classical> is a callable building the original module, so it is only
     constructed when it is actually used.
+
+    <wrap> adapts a vector-to-vector module to the shape the site expects, for
+    sites whose classical module is not already one. It is applied to the
+    quantum and matched arms but not to the classical one, which needs no
+    adapting. Both swapped arms go through the same wrapper, so the shape
+    handling cannot differ between the thing being measured and its control.
 
     The import of `quantum` is local: deleting that package leaves classical and
     matched runs working, and only fails runs that asked for a circuit.
@@ -73,14 +114,15 @@ def build_swappable(opt, site, classical, in_features, out_features):
 
     if site in _sites(getattr(opt, 'quantum_site', 'none')):
         from quantum import build_site
-        return build_site(site, opt, in_features=in_features,
-                          out_features=out_features)
+        swapped = build_site(site, opt, in_features=in_features,
+                             out_features=out_features)
+    elif site in _sites(getattr(opt, 'matched_site', 'none')):
+        swapped = MatchedBottleneck(in_features, out_features,
+                                    width=getattr(opt, 'n_qubits', 8))
+    else:
+        return classical()
 
-    if site in _sites(getattr(opt, 'matched_site', 'none')):
-        return MatchedBottleneck(in_features, out_features,
-                                 width=getattr(opt, 'n_qubits', 8))
-
-    return classical()
+    return wrap(swapped) if wrap is not None else swapped
 
 
 
@@ -255,10 +297,10 @@ def define_SE(input_nc, ngf, max_ngf, n_downsample, norm='instance', init_type='
     net = Source_Encoder(input_nc=input_nc, ngf=ngf, max_ngf=max_ngf, n_downsampling=n_downsample, norm_layer=norm_layer)
     return init_net(net, init_type, init_gain, gpu_ids)
 
-def define_CE(ngf, max_ngf, n_downsample, C_channel,norm='instance', init_type='normal', init_gain=0.02, gpu_ids=[]):
+def define_CE(ngf, max_ngf, n_downsample, C_channel,norm='instance', init_type='normal', init_gain=0.02, gpu_ids=[], opt=None):
     net = None
     norm_layer = get_norm_layer(norm_type=norm)
-    net = Channel_Encoder(ngf=ngf, max_ngf=max_ngf, C_channel=C_channel, n_downsampling=n_downsample, norm_layer=norm_layer)
+    net = Channel_Encoder(ngf=ngf, max_ngf=max_ngf, C_channel=C_channel, n_downsampling=n_downsample, norm_layer=norm_layer, opt=opt)
     return init_net(net, init_type, init_gain, gpu_ids)
 
 
@@ -293,7 +335,7 @@ class Source_Encoder(nn.Module):
 
 class Channel_Encoder(nn.Module):
 
-    def __init__(self, ngf=64, max_ngf=512, C_channel=16, n_downsampling=2, norm_layer=nn.BatchNorm2d):
+    def __init__(self, ngf=64, max_ngf=512, C_channel=16, n_downsampling=2, norm_layer=nn.BatchNorm2d, opt=None):
 
         assert(n_downsampling >= 0)
         super(Channel_Encoder, self).__init__()
@@ -311,7 +353,19 @@ class Channel_Encoder(nn.Module):
         self.res2 = ResnetBlock(min(ngf * mult, max_ngf), padding_type='zero', norm_layer=norm_layer, use_dropout=False, use_bias=use_bias)
         self.mod1 = modulation(min(ngf * mult, max_ngf))
         self.mod2 = modulation(min(ngf * mult, max_ngf))
-        self.projection = nn.Conv2d(min(ngf * mult, max_ngf), C_channel, kernel_size=3, padding=1, stride=1)
+
+        # The 'projection' site. Its output is the signal that goes on the
+        # channel, so this is where a circuit can be said to produce the
+        # transmitted symbols rather than merely to inform them.
+        ngf_dim = min(ngf * mult, max_ngf)
+
+        def classical_projection():
+            return nn.Conv2d(ngf_dim, C_channel, kernel_size=3, padding=1, stride=1)
+
+        self.projection = build_swappable(opt, 'projection', classical_projection,
+                                          in_features=ngf_dim,
+                                          out_features=C_channel,
+                                          wrap=PerPosition)
 
     def forward(self, z, SNR):
         z = self.mod1(self.res1(z), SNR)

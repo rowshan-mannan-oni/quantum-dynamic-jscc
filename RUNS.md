@@ -210,10 +210,21 @@ python train_dyna.py --gpu_ids 0 --num_workers 4 \
 > Retrain rather than trying to load them. Watch `G_reward` in `loss_log.txt`: a value
 > that is constant to five decimals across batches means the policy has stopped adapting.
 
-### Site B — channel encoder projection ⬜ not yet implemented
+### Site B — channel encoder projection ✅ implemented
 
 Replaces `Conv3×3(256→16)`, whose output **is** the transmitted signal. The headline site.
-Classical 36,880 params · matched ~2,272 · quantum ~2,232. Circuit sees batch 8192.
+Classical 36,880 params · matched 2,272 · quantum 2,232. Circuit sees batch 8192.
+
+> **Both swapped arms are 1×1, the classical reference is 3×3.** The circuit consumes one
+> vector per position, so the 8×8 grid is folded into the batch and each position is mapped
+> independently — which gives up the neighbourhood the convolution sees. It applies equally
+> to the quantum and matched arms, so *that* comparison stays clean, but part of any gap
+> against the unmodified classical reference is the lost receptive field rather than the
+> circuit. Report it alongside the parameter count.
+
+> No SNR feature is fed to this site, unlike `policy`. The `Conv3×3` it replaces does not
+> receive one — the channel state arrives via `mod1`/`mod2` upstream — so adding it would
+> give the arm an input the original never had.
 
 ```bash
 python train_dyna.py --gpu_ids 0 --num_workers 4 \
@@ -272,6 +283,12 @@ python train_dyna.py --gpu_ids 0 --num_workers 4 \
 ```bash
 python -c "import quantum; print(quantum.available_sites())"
 ```
+
+`python -m quantum.smoke_test` goes further: it builds **every** registered site through the
+same hook training uses, for all three arms, at the real batch and shapes, and checks that the
+output shape is unchanged, that gradients reach the circuit angles, and that the matched
+control is still within 10% of the quantum arm it controls for. A site that registers itself
+but is not covered there fails the run rather than going quietly untested.
 
 ---
 
