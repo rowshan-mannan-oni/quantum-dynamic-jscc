@@ -10,6 +10,15 @@ Detail lives in the commit messages; this is the map.
 
 ## Quantum work
 
+### 2026-07-29 — `Dynamic_JSCC_Kaggle.ipynb` rewritten to train an arm from the repository
+
+| | |
+|---|---|
+| ⚠️ | **The notebook no longer carries its own copy of the model.** It was a standalone reimplementation that had drifted from the repository — no quantum site, no seeding, no held-out validation, and its own `DynaJSCC` class. It now clones the repo and calls `train_dyna.py`, `make_figures.py` and `compare_arms.py`, so it always reflects the latest commit. |
+| ✨ | One `ARM` switch selects `classical` / `matched` / `quantum`; run the notebook three times to build the comparison. Installs `torchquantum` (from GitHub, `--no-deps`) and runs `quantum.smoke_test` before committing hours to a circuit that might not be receiving gradients. |
+| ✨ | The run folder is derived by importing `run_name` from `options.base_options` rather than rebuilding the string, which is what the previous notebook did — it would have silently written to the classical folder while training a quantum arm. |
+| ✨ | Resume across Kaggle's session limit: attach a previous run's `Checkpoints/<run>/` as an input and it restarts from the last rolling checkpoint. Also parses `G_reward` after training and prints a **loud warning if the policy has collapsed** to a constant rate. |
+
 ### 2026-07-29 — Dead `Normalize` class removed
 
 | | |
