@@ -23,8 +23,8 @@ baseline.
 | Kaggle notebooks (train and/or figures, driven from this repo) | **done** |
 | TorchQuantum install validated: GPU forward **and backward**, per-site benchmark | **done** — see `quantum/README.md` |
 | `quantum/` scaffold: circuit primitives, site registry, `--quantum_site` | **done** |
-| Site modules in `quantum/modules.py` | **A and B done** — policy, projection |
-| Integration hooks in `models/` | **A and B done**, covered by `smoke_test`'s per-site checks |
+| Site modules in `quantum/modules.py` | **A, B and C done** — policy, projection, decoder |
+| Integration hooks in `models/` | **A, B and C done**, covered by `smoke_test`'s per-site checks |
 | Circuit diagnostics during training (§7, §11) | **done** — `metrics.csv`, one row per epoch per network |
 | Comparison runs | **A: one seed, indicative** — quantum policy at parity with classical (§5's matched control and ≥3 seeds still outstanding) |
 | Site B first runs | **pending** — next step |

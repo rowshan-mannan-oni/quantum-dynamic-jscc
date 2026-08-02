@@ -19,6 +19,15 @@ Detail lives in the commit messages; this is the map.
 | ✨ | Training **warns at the end of any epoch** where rate entropy collapses to zero or gradient variance vanishes, so a doomed run does not depend on someone reading the file. |
 | ⚙️ | Nothing touches the graph, the loss or any weight — hooks read forward activations, gradients are read after the optimizer step, and the accumulators are switched off around validation so a fixed-SNR eval pass cannot contaminate an epoch's training statistics. Measured overhead: none (classical still 30 s/epoch). |
 
+### 2026-08-02 — Site C: the decoder input, and the quantum link
+
+| | |
+|---|---|
+| ✨ | **`--quantum_site decoder`** replaces `netG.mask_conv`, `Conv3×3(16→256)` — the first thing the receiver does with what came off the channel. 36,864 params → **2,472 quantum · 2,512 matched**. Note the sandwich is inverted relative to site B: nearly all the budget sits on the output side. |
+| ✨ | **`--quantum_site projection,decoder` makes both ends of the link circuits**, which is the strongest claim this pipeline supports. Measured 114 s/epoch against 65 s for the decoder alone and 30 s classical — ~12.7 h for 400 epochs, so it needs more than one Kaggle session. |
+| 📄 | **C should be read against B, not alone.** B constricts the transmitted latent to rank 8 of 16; C then expands 16→256 through another 8-measurement circuit. Those do *not* compound — composing two rank-8 maps is still rank 8 — so B has already discarded exactly the dimensions C would, and **C's marginal cost on top of B should be smaller than its cost alone**. What C does add is a second receptive-field loss on the receive side. |
+| ⚙️ | The three site factories were collapsed onto one `sandwich()` constructor now that a third identical body existed. Each site keeps its own registration and docstring — the reasoning, shapes and costs are the per-site content — but the circuit is built in one place, which is what plan §3 requires for a difference between placements to be attributable to placement. |
+
 ### 2026-08-02 — Site B: the channel-encoder projection
 
 | | |

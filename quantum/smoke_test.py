@@ -71,8 +71,10 @@ def build_arm(site, arm, device, n_qubits, vqc_layers):
     the site factory, and `init_net`'s re-initialisation of the linear layers on
     the way past.
 
-    Returns the network, the swapped module inside it, a callable running the
-    forward pass, and the output shape expected of it.
+    Returns the network, the swapped module inside it, a callable that builds
+    this site's inputs and runs the forward pass, and the output shape expected
+    of it. The site owns its own inputs because they differ - the decoder site
+    is fed a 16-channel latent where the others take a 256-channel feature map.
 
     The swapped module is returned separately because it is what the parameter
     budget is about. Counting the whole network instead would bury a 2.2k module
@@ -98,14 +100,24 @@ def build_arm(site, arm, device, n_qubits, vqc_layers):
     def unwrap(net):
         return net.module if isinstance(net, torch.nn.DataParallel) else net
 
+    def inputs(channels):
+        return (torch.randn(BATCH, channels, 8, 8, device=device),
+                torch.rand(BATCH, 1, device=device) * 20)
+
     if site == 'policy':
         net = networks.define_dynaP(N_output=5, **common)
         # (hard_mask, soft_mask, logits) - the logits are what the site produces
         return (net, unwrap(net).model_gate,
-                lambda z, snr: net(z, snr, 5)[2], (BATCH, 5))
+                lambda: net(*inputs(256), 5)[2], (BATCH, 5))
     if site == 'projection':
         net = networks.define_CE(C_channel=16, norm='batch', **common)
-        return net, unwrap(net).projection, net, (BATCH, 16, 8, 8)
+        return net, unwrap(net).projection, lambda: net(*inputs(256)), (BATCH, 16, 8, 8)
+    if site == 'decoder':
+        net = networks.define_dynaG(output_nc=3, C_channel=16, n_blocks=2,
+                                    norm='batch', **common)
+        # Runs the whole decoder, so the swapped module is checked in place
+        # rather than in isolation: a shape it gets wrong surfaces here.
+        return net, unwrap(net).mask_conv, lambda: net(*inputs(16)), (BATCH, 3, 32, 32)
 
     raise KeyError(f'site {site!r} is registered but has no entry in build_arm, '
                    f'so it would go untested')
@@ -161,10 +173,7 @@ def check_sites(device, n_qubits, vqc_layers):
         for arm in ('classical', 'matched', 'quantum'):
             net, module, forward, expected = build_arm(site, arm, device,
                                                        n_qubits, vqc_layers)
-
-            z = torch.randn(BATCH, 256, 8, 8, device=device)
-            snr = torch.rand(BATCH, 1, device=device) * 20
-            out = forward(z, snr)
+            out = forward()
             out.pow(2).mean().backward()
 
             assert tuple(out.shape) == expected, \

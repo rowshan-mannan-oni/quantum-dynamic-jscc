@@ -236,10 +236,20 @@ python train_dyna.py --gpu_ids 0 --num_workers 4 \
 
 → `…_hard_mprojection-q8_s0/` ~3.4 h · `…_hard_qprojection-q8l2_s0/` ~6.7 h
 
-### Site C — decoder input ⬜ not yet implemented
+### Site C — decoder input ✅ implemented
 
 Replaces `netG.mask_conv`, `Conv3×3(16→256)`. The receive-side mirror of B; pair with B for a
-"quantum link".
+"quantum link". Classical 36,864 params · matched 2,512 · quantum 2,472. Note the sandwich is
+the other way round from site B — nearly all of the budget sits on the output side.
+
+> **Read C against B, not on its own.** B constricts the transmitted latent to rank 8 of 16;
+> C then expands 16→256 through another 8-measurement circuit, so the decoder's features are
+> rank 8 of 256. Those do **not** compound — composing two rank-8 maps is still rank 8 — so B
+> has already discarded exactly the dimensions C would. **C's marginal cost on top of B should
+> therefore be smaller than its cost alone**, and that asymmetry is the measurement worth
+> making here. What C *does* add is a second receptive-field loss: after AWGN the received
+> signal is rank-8 signal plus full-rank noise, and the classical `Conv3×3` can project onto
+> the signal subspace to suppress it, where the circuit has to learn that projection.
 
 ```bash
 python train_dyna.py --gpu_ids 0 --num_workers 4 \
@@ -250,7 +260,11 @@ python train_dyna.py --gpu_ids 0 --num_workers 4 \
     --lambda_reward 1.5e-3 --seed 0 --val_size 2000 --quantum_site projection,decoder
 ```
 
-→ `…_hard_qdecoder-q8l2_s0/` ~6.7 h · `…_hard_qprojection+decoder-q8l2_s0/` ~10 h
+→ `…_hard_qdecoder-q8l2_s0/` ~7.2 h · `…_hard_qprojection+decoder-q8l2_s0/` **~12.7 h**
+
+Measured on an RTX 4070 Laptop: 65 s/epoch for the decoder alone, **114 s/epoch for both
+ends**, against 30 s classical. The link is two circuits per forward pass, so it does not fit
+in one Kaggle session — plan on resuming.
 
 ### Site D — SNR modulation ⬜ not yet implemented
 

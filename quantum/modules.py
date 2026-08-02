@@ -25,6 +25,27 @@ from quantum import register_site
 from quantum.layers import HybridVQC, VariationalCircuit     # noqa: F401
 
 
+def sandwich(opt, in_features, out_features):
+    """The one construction every site so far reduces to.
+
+    Section 3 of the plan makes this inevitable rather than incidental: a circuit
+    takes one angle per qubit in and returns one expectation per qubit out, so
+    every site is the same classical-quantum-classical sandwich and differs only
+    in the widths on either side. Holding it fixed is the point of the
+    experiment - if each site had its own circuit, a difference between two
+    placements would be confounded by two different circuit designs, and the map
+    of *where* a VQC can go would stop being a map.
+
+    So the site functions below carry the reasoning, the shapes and the costs,
+    and hand the construction here. Sites D and F will not reduce to this - the
+    modulation site's multiply branch ends in a sigmoid gate that PauliZ
+    expectations in [-1, 1] cannot feed directly, and the source encoder folds
+    patches rather than positions - and they get their own bodies when they land.
+    """
+    return HybridVQC(in_features, out_features,
+                     n_qubits=opt.n_qubits, n_layers=opt.vqc_layers)
+
+
 @register_site('policy')
 def build_policy_gate(opt, in_features, out_features):
     """Site A - the rate-control policy.
@@ -44,8 +65,7 @@ def build_policy_gate(opt, in_features, out_features):
     training for the last quarter of the schedule unless that is changed
     deliberately.
     """
-    return HybridVQC(in_features, out_features,
-                     n_qubits=opt.n_qubits, n_layers=opt.vqc_layers)
+    return sandwich(opt, in_features, out_features)
 
 
 @register_site('projection')
@@ -81,5 +101,34 @@ def build_projection(opt, in_features, out_features):
     36,880 for the convolution. Being 16x smaller is exactly why the matched
     control at 2,272 is not optional here.
     """
-    return HybridVQC(in_features, out_features,
-                     n_qubits=opt.n_qubits, n_layers=opt.vqc_layers)
+    return sandwich(opt, in_features, out_features)
+
+
+@register_site('decoder')
+def build_decoder(opt, in_features, out_features):
+    """Site C - the decoder input, and the receive half of a quantum link.
+
+    Replaces netG.mask_conv, Conv3x3(16 -> 256): the first thing the receiver
+    does with what came off the channel. Pair it with 'projection' via
+    --quantum_site projection,decoder and both ends of the link are circuits,
+    which is the strongest claim this pipeline supports.
+
+    Reading it alongside site B matters more than reading it alone. Site B
+    constricts the transmitted latent to rank 8 of 16; this site then expands 16
+    to 256 through another 8-measurement circuit, so the decoder's features are
+    rank 8 of 256. Those do not compound - composing two rank-8 maps is still
+    rank 8 - so B has already discarded exactly the dimensions C would discard,
+    and C's marginal cost on top of B should be *smaller* than its cost alone.
+    That asymmetry is the interesting measurement here.
+
+    What it does add on top of B is a second receptive-field loss. After AWGN
+    the received signal is a rank-8 signal plus full-rank noise, and the
+    classical Conv3x3 can project onto the signal subspace and suppress the
+    noise in the discarded dimensions. Here that projection has to be learned by
+    the pre-linear instead. Whether it is, is what this site tests.
+
+    Parameters (q=8, L=2): pre 136 + angles 32 + post 2,304 = 2,472, against
+    36,864 for the convolution. Note the sandwich is the other way round from
+    site B - almost all of the budget is on the output side.
+    """
+    return sandwich(opt, in_features, out_features)

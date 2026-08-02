@@ -82,7 +82,7 @@ class PerPosition(nn.Module):
 # silently build the classical module while the checkpoint folder is named as
 # though it were an arm, which is the kind of thing that is only noticed after
 # the results are written up.
-SWAPPABLE_SITES = ('policy', 'projection')
+SWAPPABLE_SITES = ('policy', 'projection', 'decoder')
 
 
 def _sites(value):
@@ -280,10 +280,10 @@ class ResnetBlock(nn.Module):
 
 ########################################################
 
-def define_dynaG(output_nc, ngf, max_ngf, n_downsample, C_channel, n_blocks, norm='instance', init_type='kaiming', init_gain=0.02, gpu_ids=[], activation='sigmoid'):
+def define_dynaG(output_nc, ngf, max_ngf, n_downsample, C_channel, n_blocks, norm='instance', init_type='kaiming', init_gain=0.02, gpu_ids=[], activation='sigmoid', opt=None):
     net = None
     norm_layer = get_norm_layer(norm_type=norm)
-    net = Generator_dyna(output_nc=output_nc, ngf=ngf, max_ngf=max_ngf, C_channel=C_channel, n_blocks=n_blocks, n_downsampling=n_downsample, norm_layer=norm_layer, padding_type="reflect")
+    net = Generator_dyna(output_nc=output_nc, ngf=ngf, max_ngf=max_ngf, C_channel=C_channel, n_blocks=n_blocks, n_downsampling=n_downsample, norm_layer=norm_layer, padding_type="reflect", opt=opt)
     return init_net(net, init_type, init_gain, gpu_ids)
 
 def define_dynaP(ngf, max_ngf, n_downsample, init_type='kaiming', init_gain=0.02, gpu_ids=[], N_output=7, opt=None):
@@ -374,7 +374,7 @@ class Channel_Encoder(nn.Module):
         return latent
 
 class Generator_dyna(nn.Module):
-    def __init__(self, output_nc, ngf=64, max_ngf=512, C_channel=16, n_blocks=2, n_downsampling=2, norm_layer=nn.BatchNorm2d, padding_type="reflect"):
+    def __init__(self, output_nc, ngf=64, max_ngf=512, C_channel=16, n_blocks=2, n_downsampling=2, norm_layer=nn.BatchNorm2d, padding_type="reflect", opt=None):
         assert (n_blocks >= 0)
         assert(n_downsampling >= 0)
 
@@ -390,7 +390,16 @@ class Generator_dyna(nn.Module):
         mult = 2 ** n_downsampling
         ngf_dim = min(ngf * mult, max_ngf)
 
-        self.mask_conv = nn.Conv2d(C_channel, ngf_dim, kernel_size=3, padding=1, stride=1, bias=use_bias)
+        # The 'decoder' site: the first thing the receiver does with what came
+        # off the channel. Pairs with 'projection' for a link that is quantum at
+        # both ends.
+        def classical_mask_conv():
+            return nn.Conv2d(C_channel, ngf_dim, kernel_size=3, padding=1, stride=1, bias=use_bias)
+
+        self.mask_conv = build_swappable(opt, 'decoder', classical_mask_conv,
+                                         in_features=C_channel,
+                                         out_features=ngf_dim,
+                                         wrap=PerPosition)
 
         model = []
 
