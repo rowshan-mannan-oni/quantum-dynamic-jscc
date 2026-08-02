@@ -328,6 +328,28 @@ optimised rather than generalisation.
 Best-tracking earns its keep on the quantum arms: a run does not necessarily end at its best point,
 and variational circuits can destabilise late in training.
 
+### `metrics.csv` — what the circuit was doing while it trained
+
+Written automatically beside the checkpoints, one row per epoch. `loss_log.txt` says *that* a
+run went wrong; this says *why*, and none of it survives into the checkpoint — gradients are
+gone the moment training ends.
+
+| Column | Reading it |
+|---|---|
+| `rate_entropy` | bits over the rates chosen. **0 means the policy stopped adapting** and the run is a fixed-rate codec. Max is log₂(`G_s`+1) = 2.32 |
+| `<net>_saturation` | fraction of the angle encoder with `\|tanh\| > 0.99`. The failure that collapsed the first policy run: 82% pinned at 20 dB |
+| `<net>_measure` | mean `\|⟨Z⟩\|`. Near 1 means the state sits at the poles and the readout carries little |
+| `<net>_grad_norm` | gradient norm on the circuit angles. Decaying toward 0 while the loss is still high is a barren plateau |
+| `<net>_grad_var` | variance of those gradients across angles. The sharper test — a circuit can hold a healthy norm while every angle gets the same uninformative push |
+
+Columns are per network (`ce` for a projection circuit, `g` for a decoder one, `p` for a
+policy one), so a `projection,decoder` run reports both ends separately and you can see which
+one moved. Training prints a warning at the end of any epoch where rate entropy collapses or
+gradient variance vanishes, so a doomed run does not need to be caught by reading the file.
+
+Diagnostics never touch the graph, the loss or any weight — hooks read forward activations,
+and gradients are read after the optimizer step. A run with them is the same run without.
+
 ### Save frequency
 
 > `--save_latest_freq` counts **images** and must be a multiple of `--batch_size`, or it rarely

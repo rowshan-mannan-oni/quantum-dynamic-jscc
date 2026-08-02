@@ -25,6 +25,7 @@ baseline.
 | `quantum/` scaffold: circuit primitives, site registry, `--quantum_site` | **done** |
 | Site modules in `quantum/modules.py` | **A and B done** — policy, projection |
 | Integration hooks in `models/` | **A and B done**, covered by `smoke_test`'s per-site checks |
+| Circuit diagnostics during training (§7, §11) | **done** — `metrics.csv`, one row per epoch per network |
 | Comparison runs | **A: one seed, indicative** — quantum policy at parity with classical (§5's matched control and ≥3 seeds still outstanding) |
 | Site B first runs | **pending** — next step |
 

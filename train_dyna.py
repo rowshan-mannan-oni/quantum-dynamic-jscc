@@ -2,6 +2,7 @@
 # Licensed under the CC BY-NC-SA 4.0 license (https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
 import time
 from models import create_model
+from models.diagnostics import Diagnostics
 from options.train_options import TrainOptions
 import os
 import torch
@@ -56,6 +57,12 @@ options.save_options(opt)      # provenance record next to the checkpoints
 model = create_model(opt)      # create a model given opt.model and other options
 model.setup(opt)               # regular setup: load and print networks; create schedulers
 
+# Records per epoch what the swapped-in module is doing - saturation, measurement
+# magnitude, gradient norm and variance on the circuit angles, and the entropy of
+# the rates chosen. Free, and it is the only chance to capture any of it: none of
+# these survive into the checkpoint.
+diagnostics = Diagnostics(model, opt, path)
+
 total_iters = 0                # the total number of training iterations
 total_epoch = opt.n_epochs_joint + opt.n_epochs_decay + opt.n_epochs_fine
 
@@ -107,6 +114,11 @@ def validate():
     cuda_state = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
     torch.manual_seed(12345)
 
+    # Scoring runs the same modules the diagnostics hook, at a fixed SNR grid and
+    # in eval mode. Letting those forwards accumulate would mix a different
+    # operating point into the epoch's training statistics.
+    diagnostics.enabled = False
+
     was_training = opt.isTrain
     opt.isTrain = False        # fixed SNR, and the hard mask that inference uses
     model.eval()
@@ -124,6 +136,7 @@ def validate():
 
     opt.isTrain = was_training
     model.train()
+    diagnostics.enabled = True
     torch.set_rng_state(rng_state)
     if cuda_state is not None:
         torch.cuda.set_rng_state_all(cuda_state)
@@ -188,6 +201,7 @@ for epoch in range(start_epoch, total_epoch + 1):    # outer loop for different 
 
         model.set_input(data[0])         # unpack data from dataset and apply preprocessing
         model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
+        diagnostics.on_batch(model)   # reads .grad, which the step above leaves in place
         epoch_loss += model.loss_G.item()
         epoch_batches += 1
 
@@ -213,6 +227,19 @@ for epoch in range(start_epoch, total_epoch + 1):    # outer loop for different 
     # number of completed epochs recorded alongside it.
     model.update_temp()
     print(f'Update temperature to {model.temp}')
+
+    # Written before validation so the row covers this epoch's training batches
+    # only. Warn on the two failures that are silent in the loss: a policy that
+    # has stopped adapting, and circuit gradients that have flattened out.
+    row = diagnostics.on_epoch_end(epoch, stage, lr, epoch_loss / max(epoch_batches, 1))
+    if not freeze and row['rate_entropy'] < 0.01:
+        print('WARNING: rate entropy %.4f - every image is getting the same rate, so '
+              'this is a fixed-rate codec, not an adaptive one.' % row['rate_entropy'])
+    for label in diagnostics.circuit_params:
+        var = row.get(f'{label}_grad_var')
+        if var not in (None, '') and float(var) < 1e-12:
+            print('WARNING: %s circuit gradient variance %s - the angles are receiving '
+                  'no distinguishable signal (barren plateau).' % (label, var))
 
     # Score the model and keep the best one separately from the rolling save.
     # Worth having because a run does not necessarily end at its best point:

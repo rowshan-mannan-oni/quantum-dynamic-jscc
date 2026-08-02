@@ -10,6 +10,15 @@ Detail lives in the commit messages; this is the map.
 
 ## Quantum work
 
+### 2026-08-02 — `metrics.csv`: what the circuit was doing while it trained
+
+| | |
+|---|---|
+| ✨ | **Training now writes `metrics.csv` beside the checkpoints, one row per epoch:** rate entropy, angle-encoder saturation, mean `\|⟨Z⟩\|`, and the gradient norm *and variance* on the circuit angles. `loss_log.txt` says *that* a run went wrong; none of these survive into the checkpoint, so after the run the information simply does not exist anywhere. Plan §5, §7 and §11 all asked for it — §11 names gradient variance as the barren-plateau mitigation — and none of it was implemented. |
+| ✨ | **Columns are per network**, so `--quantum_site projection,decoder` reports `ce_*` and `g_*` separately and you can see which end moved. Sites are found by structure (any module carrying a `.pre` linear), so a new site is covered the moment it is registered. |
+| ✨ | Training **warns at the end of any epoch** where rate entropy collapses to zero or gradient variance vanishes, so a doomed run does not depend on someone reading the file. |
+| ⚙️ | Nothing touches the graph, the loss or any weight — hooks read forward activations, gradients are read after the optimizer step, and the accumulators are switched off around validation so a fixed-SNR eval pass cannot contaminate an epoch's training statistics. Measured overhead: none (classical still 30 s/epoch). |
+
 ### 2026-08-02 — Site B: the channel-encoder projection
 
 | | |
